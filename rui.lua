@@ -1453,19 +1453,19 @@ function Library:CreateWindow(options)
                         local knobSize = 16
                         local trackY = 21
 
-                        local track = mk("Frame", {
+                        local trackBar = mk("Frame", {
                             Parent = sldFrame,
                             Size = UDim2.new(1, 0, 0, trackHeight),
                             Position = UDim2.new(0, 0, 0, trackY),
                             BackgroundColor3 = Theme.Themes.Default.Container,
                             ZIndex = 1
                         })
-                        Theme:Register(track, "BackgroundColor3", "Container")
-                        mk("UICorner", {Parent = track, CornerRadius = UDim.new(1, 0)})
-                        Theme:Register(mk("UIStroke", {Parent = track, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5}), "Color", "Border")
+                        Theme:Register(trackBar, "BackgroundColor3", "Container")
+                        mk("UICorner", {Parent = trackBar, CornerRadius = UDim.new(1, 0)})
+                        Theme:Register(mk("UIStroke", {Parent = trackBar, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5}), "Color", "Border")
 
                         local fill = mk("Frame", {
-                            Parent = track,
+                            Parent = trackBar,
                             Size = UDim2.new(0, 0, 1, 0),
                             BackgroundColor3 = Theme.Themes.Default.Accent,
                             ZIndex = 2
@@ -1545,9 +1545,9 @@ function Library:CreateWindow(options)
                         end
 
                         local function update(input)
-                            local w = track.AbsoluteSize.X
+                            local w = trackBar.AbsoluteSize.X
                             if w == 0 then return end
-                            local percent = math.clamp((input.Position.X - track.AbsolutePosition.X) / w, 0, 1)
+                            local percent = math.clamp((input.Position.X - trackBar.AbsolutePosition.X) / w, 0, 1)
                             value = math.floor(compDef.Min + (compDef.Max - compDef.Min) * percent)
                             valLbl.Text = tostring(value)
                             tooltipText.Text = tostring(value)
