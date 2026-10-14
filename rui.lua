@@ -1,6 +1,6 @@
 -- RUI by ren (@wtf_renn)
 -- my ui lib, dm if it breaks
--- v2.1 10/14, added servers tab + more themes
+-- v2.1 10/14, polish
 
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
@@ -38,6 +38,10 @@ local function track(x)
     table.insert(cons, x)
     return x
 end
+
+-- toggle paint fns, so SetTheme can refresh them (declared up here
+-- cause Theme is defined before Library)
+local toggleRefresh = {}
 
 -- helpers (make stuff, tween, http)
 local function mk(className, props)
@@ -201,11 +205,10 @@ end
 
 function Theme:UpdateTheme()
     local theme = self.Themes[self.CurrentTheme]
-    local count = #self.themed
     local i = 1
-    while i <= count do
+    while i <= #self.themed do
         local obj = self.themed[i]
-        if obj.Instance and obj.Instance.Parent then
+        if obj and obj.Instance and obj.Instance.Parent then
             obj.Instance[obj.Property] = theme[obj.Key]
             i = i + 1
         else
@@ -219,8 +222,8 @@ function Theme:SetTheme(name)
     self.CurrentTheme = name
     self.Themes.Default = self.Themes[name]
     self:UpdateTheme()
-    for _, tglUpdate in ipairs(Library.Toggles or {}) do
-        tglUpdate(false)
+    for _, fn in ipairs(toggleRefresh) do
+        pcall(fn, false)
     end
 end
 
@@ -269,6 +272,9 @@ local notifs = {
 }
 
 function notifs:Init(parent)
+    if self.Gui and self.Gui.Parent and self.Container and self.Container.Parent then
+        return -- already got one, reuse it
+    end
     self.Gui = mk("ScreenGui", {
         Name = "RUI_Notifs",
         Parent = parent,
@@ -335,7 +341,7 @@ function notifs:Notify(title, desc, duration)
     duration = duration or 5
     
     if self.busy then
-        self.Queue = {title, desc, duration}
+        table.insert(self.Queue, {title, desc, duration})
         return
     end
     
@@ -344,23 +350,23 @@ function notifs:Notify(title, desc, duration)
     if #self.Active >= 3 then
         local oldest = self.Active[1]
         task.spawn(function()
-            self:dismiss(oldest)
+            pcall(function() self:dismiss(oldest) end)
             task.wait(0.2)
-            self:showNotif(title, desc, duration)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration) end)
+            if not ok then warn("notif broke: " .. tostring(err)) end
             self.busy = false
             if #self.Queue > 0 then
-                local q = self.Queue
-                self.Queue = {}
+                local q = table.remove(self.Queue, 1)
                 self:Notify(q[1], q[2], q[3])
             end
         end)
     else
         task.spawn(function()
-            self:showNotif(title, desc, duration)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration) end)
+            if not ok then warn("notif broke: " .. tostring(err)) end
             self.busy = false
             if #self.Queue > 0 then
-                local q = self.Queue
-                self.Queue = {}
+                local q = table.remove(self.Queue, 1)
                 self:Notify(q[1], q[2], q[3])
             end
         end)
@@ -555,6 +561,8 @@ function Library:Unload()
     end
     table.clear(Theme.themed)
     table.clear(savedFlags)
+    table.clear(toggleRefresh)
+    table.clear(Library.Toggles)
     table.clear(Library.Windows)
 end
 
@@ -695,6 +703,7 @@ function Library:CreateWindow(options)
 
     local smoothX = dragBar.Position.X.Offset
     local smoothY = dragBar.Position.Y.Offset
+    local snapped = false
 
     local renderConn = RunService.RenderStepped:Connect(function()
         if not dragBar or not dragBar.Parent then
@@ -707,6 +716,11 @@ function Library:CreateWindow(options)
             local targetX = canvasAbs.X + canvasSize.X/2
             local targetY = canvasAbs.Y + canvasSize.Y + 65
 
+            if not snapped then
+                -- first frame: start at the target instead of flying in from 0,0
+                smoothX, smoothY = targetX, targetY
+                snapped = true
+            end
             local snap = 0.6
             if math.abs(targetX - smoothX) < 0.5 and math.abs(targetY - smoothY) < 0.5 then
                 smoothX, smoothY = targetX, targetY
@@ -833,7 +847,8 @@ function Library:CreateWindow(options)
         windowObj.Hidden = true
         tween(canvasGroup, {GroupTransparency = 1}, 0.3)
         tween(stroke, {Transparency = 1}, 0.3)
-        tween(shadowFrame:FindFirstChild("Shadow"), {ImageTransparency = 1}, 0.3)
+        local sh = shadowFrame:FindFirstChild("Shadow")
+        if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
         if isMobile and fab then
             fab.Position = fabStoredPos
             fab.Visible = true
@@ -905,9 +920,9 @@ function Library:CreateWindow(options)
         PaddingBottom = UDim.new(0, 10)
     })
 
-    tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    track(tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         tabList.CanvasSize = UDim2.new(0, 0, 0, tabLayout.AbsoluteContentSize.Y + 10)
-    end)
+    end))
 
     contentContainer = mk("Frame", {
         Parent = canvasGroup,
@@ -1110,7 +1125,8 @@ function Library:CreateWindow(options)
             if windowObj.Hidden then
                 tween(canvasGroup, {GroupTransparency = 1}, 0.3)
                 tween(stroke, {Transparency = 1}, 0.3)
-                tween(shadowFrame:FindFirstChild("Shadow"), {ImageTransparency = 1}, 0.3)
+                local sh = shadowFrame:FindFirstChild("Shadow")
+                if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
                 if isMobile and fab then
                     fab.Position = fabStoredPos
                     fab.Visible = true
@@ -1127,7 +1143,8 @@ function Library:CreateWindow(options)
                 shadowFrame.Visible = true
                 tween(canvasGroup, {GroupTransparency = windowObj.UserOpacity}, 0.3)
                 tween(stroke, {Transparency = 0.5}, 0.3)
-                tween(shadowFrame:FindFirstChild("Shadow"), {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3)
+                local sh2 = shadowFrame:FindFirstChild("Shadow")
+                if sh2 then tween(sh2, {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3) end
                 if not windowObj.Minimized then
                     dragBar.Visible = true
                 end
@@ -1389,8 +1406,9 @@ function Library:CreateWindow(options)
                              end
                          end
 
-                         updateState(false)
-                         table.insert(Library.Toggles, updateState)
+                          updateState(false)
+                          table.insert(Library.Toggles, updateState)
+                          table.insert(toggleRefresh, updateState)
 
                          local function toggle()
                              state = not state
@@ -1410,11 +1428,12 @@ function Library:CreateWindow(options)
                          local flagObj = {
                              Value = state,
                              Default = compDef.Default,
-                             Set = function(self, val)
-                                 state = val
-                                 updateState(true)
-                                 Library:SafeCallback(compDef.Callback, state)
-                             end
+                              Set = function(self, val)
+                                  state = val
+                                  self.Value = val
+                                  updateState(true)
+                                  Library:SafeCallback(compDef.Callback, state)
+                              end
                          }
                          if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
                         
@@ -1626,16 +1645,20 @@ function Library:CreateWindow(options)
                             end
                         end))
 
-                        local percent = math.clamp((value - compDef.Min) / (compDef.Max - compDef.Min), 0, 1)
+                        local span = math.max(1, compDef.Max - compDef.Min)
+                        local percent = math.clamp((value - compDef.Min) / span, 0, 1)
                         setFill(percent)
 
                         local flagObj = {
                             Value = value,
                             Default = compDef.Default,
-                            Set = function(self, val)
-                                value = math.clamp(val, compDef.Min, compDef.Max)
-                                valLbl.Text = tostring(value)
-                                local p = math.clamp((value - compDef.Min) / (compDef.Max - compDef.Min), 0, 1)
+                             Set = function(self, val)
+                                 value = math.clamp(val, compDef.Min, compDef.Max)
+                                 self.Value = value
+                                 valLbl.Text = tostring(value)
+                                 tooltipText.Text = tostring(value)
+                                 local span = math.max(1, compDef.Max - compDef.Min)
+                                 local p = math.clamp((value - compDef.Min) / span, 0, 1)
                                 tween(fill, {Size = UDim2.new(p, 0, 1, 0)}, 0.1)
                                 Library:SafeCallback(compDef.Callback, value)
                             end
@@ -1693,6 +1716,7 @@ function Library:CreateWindow(options)
                         })
                         Theme:Register(icon, "TextColor3", "SubText")
                         
+                        local dpItems = compDef.Items or {}
                         local listPos = 56
                         local optHeight = 26
                         local listFrame = mk("ScrollingFrame", {
@@ -1702,7 +1726,7 @@ function Library:CreateWindow(options)
                             BackgroundTransparency = 0,
                             BorderSizePixel = 0,
                             ScrollBarThickness = 0,
-                            CanvasSize = UDim2.new(0, 0, 0, #compDef.Items * (optHeight + 2))
+                            CanvasSize = UDim2.new(0, 0, 0, #dpItems * (optHeight + 2))
                         })
                         Theme:Register(listFrame, "BackgroundColor3", "Background")
                         Theme:Register(listFrame, "ScrollBarImageColor3", "Accent")
@@ -1726,7 +1750,7 @@ function Library:CreateWindow(options)
                         local dValue = compDef.Default
                         local optionBtns = {}
                         
-                        for i, item in ipairs(compDef.Items) do
+                        for i, item in ipairs(dpItems) do
                             local opt = mk("TextButton", {
                                 Parent = listFrame,
                                 Size = UDim2.new(1, -4, 0, optHeight),
@@ -1774,12 +1798,14 @@ function Library:CreateWindow(options)
                             track(opt.MouseButton1Click:Connect(function()
                                 dValue = item
                                 box.Text = " " .. item
-                                for _, data in ipairs(optionBtns) do
-                                    data.Btn.TextColor3 = Theme.Themes.Default.SubText
-                                    data.Check.Visible = false
-                                end
-                                opt.TextColor3 = Theme.Themes.Default.Text
-                                optCheck.Visible = true
+                                 for _, data in ipairs(optionBtns) do
+                                     data.Btn.TextColor3 = Theme.Themes.Default.SubText
+                                     Theme:Register(data.Btn, "TextColor3", "SubText")
+                                     data.Check.Visible = false
+                                 end
+                                 opt.TextColor3 = Theme.Themes.Default.Text
+                                 Theme:Register(opt, "TextColor3", "Text")
+                                 optCheck.Visible = true
                                 Library:SafeCallback(compDef.Callback, dValue)
                                 if compDef.Flag and savedFlags[compDef.Flag] then
                                     savedFlags[compDef.Flag].Value = dValue
@@ -1790,7 +1816,7 @@ function Library:CreateWindow(options)
                                 tween(icon, {Rotation = 0}, 0.2)
                                 tween(boxStroke, {Transparency = 0.5}, 0.2)
                             end))
-                            table.insert(optionBtns, {Btn = opt, Check = optCheck})
+                            table.insert(optionBtns, {Btn = opt, Check = optCheck, Item = item})
                         end
                         
                         track(box.MouseButton1Click:Connect(function()
@@ -1809,11 +1835,18 @@ function Library:CreateWindow(options)
                         local flagObj = {
                             Value = dValue,
                             Default = compDef.Default,
-                            Set = function(self, val)
-                                dValue = val
-                                box.Text = " " .. tostring(val)
-                                Library:SafeCallback(compDef.Callback, val)
-                            end
+                             Set = function(self, val)
+                                 dValue = val
+                                 self.Value = val
+                                 box.Text = " " .. tostring(val)
+                                 for _, data in ipairs(optionBtns) do
+                                     local on = data.Item == val
+                                     data.Check.Visible = on
+                                     data.Btn.TextColor3 = on and Theme.Themes.Default.Text or Theme.Themes.Default.SubText
+                                     Theme:Register(data.Btn, "TextColor3", on and "Text" or "SubText")
+                                 end
+                                 Library:SafeCallback(compDef.Callback, val)
+                             end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
                     end
@@ -2469,10 +2502,11 @@ function Library:CreateWindow(options)
 
                 local query = searchBox.Text:lower()
                 for _, server in ipairs(servers) do
-                    if query ~= "" and not server.id:lower():find(query, 1, true) then
+                    local sid = tostring(server.id or "")
+                    if query ~= "" and not sid:lower():find(query, 1, true) then
                         continue
                     end
-                    local isCurrent = server.id == game.JobId
+                    local isCurrent = sid == game.JobId
                     local entry = mk("Frame", {
                         Parent = serverListFrame, Size = UDim2.new(1, -4, 0, 32), BackgroundTransparency = 0
                     })
@@ -2485,7 +2519,7 @@ function Library:CreateWindow(options)
 
                     local idLbl = mk("TextLabel", {
                         Parent = entry, Size = UDim2.new(0.5, -8, 1, 0), Position = UDim2.new(0, 8, 0, 0),
-                        BackgroundTransparency = 1, Text = server.id or "N/A",
+                        BackgroundTransparency = 1, Text = (sid ~= "" and sid or "N/A"),
                         Font = Enum.Font.GothamMedium, TextSize = 11,
                         TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd
                     })
@@ -2526,7 +2560,9 @@ function Library:CreateWindow(options)
                             tween(joinStroke, {Transparency = 0.5}, 0.2)
                         end))
                         track(joinBtn.MouseButton1Click:Connect(function()
-                            TeleportService:TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                            if sid ~= "" then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, sid, LocalPlayer)
+                            end
                         end))
                     end
                 end
