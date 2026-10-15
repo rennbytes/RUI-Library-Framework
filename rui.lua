@@ -1,6 +1,6 @@
 -- RUI by ren (@wtf_renn)
 -- my ui lib, dm if it breaks
--- v2.1 10/14, polish
+-- v2.1 10/14, added servers tab + more themes
 
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
