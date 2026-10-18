@@ -796,11 +796,12 @@ local function packFlags()
         if val == nil then
             val = def.Default
         end
+        -- nil means the element has no value yet (dropdown with no default),
+        -- saving the string "nil" would come back as a real value later
+        if val == nil then continue end
         if typeof(val) == "EnumItem" then
             val = val.Name
-        elseif type(val) == "boolean" or type(val) == "number" or type(val) == "string" then
-            -- already json friendly
-        else
+        elseif type(val) ~= "boolean" and type(val) ~= "number" and type(val) ~= "string" then
             val = tostring(val)
         end
         out[name] = val
@@ -1393,7 +1394,7 @@ function Library:CreateWindow(options)
         DefaultMaximized = false,
         Keybind = Library.ToggleKeybind,
         Locked = false,
-        nextOrder = 2,
+        nextOrder = 10,
         switching = false
     }
 
@@ -3890,10 +3891,10 @@ function Library:CreateWindow(options)
 
     -- make the default tabs
     local homeTab = windowObj:CreateTab("Home", 1, BuildHomeTab)
-    local serversTab = windowObj:CreateTab("Servers", 9990, BuildServersTab)
+    local serversTab = windowObj:CreateTab("Servers", 2, BuildServersTab)
 
     -- customize tab
-    local customizeTab = windowObj:CreateTab("Customize", 9991)
+    local customizeTab = windowObj:CreateTab("Customize", 3)
     local displaySec = customizeTab:CreateSection("Display")
     displaySec:CreateSlider("UI Opacity", 20, 100, 80, function(val)
         windowObj.UserOpacity = 1 - (val / 100)
@@ -3954,7 +3955,7 @@ function Library:CreateWindow(options)
     end
 
     -- settings tab
-    local settingsTab = windowObj:CreateTab("Settings", 9992)
+    local settingsTab = windowObj:CreateTab("Settings", 4)
     local uiSec = settingsTab:CreateSection("Settings")
 
     -- anti afk, clicks when idle so u dont get kicked
