@@ -2,17 +2,22 @@
 -- my ui lib, dm if it breaks
 -- v2.1 10/14, added servers tab + more themes
 
-local CoreGui = game:GetService("CoreGui")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local HttpService = game:GetService("HttpService")
-local TextService = game:GetService("TextService")
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local GuiService = game:GetService("GuiService")
-local Workspace = game:GetService("Workspace")
-local VirtualUser = game:GetService("VirtualUser")
+-- some execs remap the globals so GetService can get fiddled with, grab em up front
+local cloneref = cloneref or clonereference or function(x)
+    return x
+end
+
+local CoreGui = cloneref(game:GetService("CoreGui"))
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local TweenService = cloneref(game:GetService("TweenService"))
+local RunService = cloneref(game:GetService("RunService"))
+local HttpService = cloneref(game:GetService("HttpService"))
+local TextService = cloneref(game:GetService("TextService"))
+local Players = cloneref(game:GetService("Players"))
+local TeleportService = cloneref(game:GetService("TeleportService"))
+local GuiService = cloneref(game:GetService("GuiService"))
+local Workspace = cloneref(game:GetService("Workspace"))
+local VirtualUser = cloneref(game:GetService("VirtualUser"))
 
 -- kill last ui if we re-execute
 if _G.__RUI_Cleanup then
@@ -38,6 +43,9 @@ local function track(x)
     table.insert(cons, x)
     return x
 end
+
+-- destructive actions look the same on every theme so they read as destructive
+local DANGER = Color3.fromRGB(235, 90, 90)
 
 -- toggle paint fns, so SetTheme can refresh them (declared up here
 -- cause Theme is defined before Library)
@@ -227,12 +235,30 @@ function Theme:SetTheme(name)
     end
 end
 
+-- only one thing drags at a time, the topbar and the bottom bar both move the
+-- window so without this they fight each other
+local activeDrag = nil
+
+-- most recently clicked window sits on top of the others
+local topOrder = 0
+local function bringToFront(g)
+    topOrder = topOrder + 1
+    g.DisplayOrder = topOrder
+end
+
+-- set while a keybind element is waiting for a key, so escape closes the window
+-- instead of cancelling the bind
+local listeningKeybind = false
+
 -- drag windows around by the top bar
 local function drag(topbar, window)
+    local token = {}
     local dragging, dragInput, dragStart, startPos
     
     track(topbar.InputBegan:Connect(function(input)
+        if activeDrag and activeDrag ~= token then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            activeDrag = token
             dragging = true
             dragStart = input.Position
             startPos = window.Position
@@ -240,7 +266,9 @@ local function drag(topbar, window)
     end))
     
     track(UserInputService.InputEnded:Connect(function(input)
+        if activeDrag ~= token then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            activeDrag = nil
             dragging = false
         end
     end))
@@ -513,7 +541,12 @@ function notifs:showNotif(title, desc, duration)
 end
 
 -- saved flags for reset button n stuff
+-- flagDefs and flagValues get filled the second someone calls CreateToggle and not
+-- when the tab actually builds, otherwise reset + configs do nothing if they never
+-- opened that tab. savedFlags holds the Set() closures once the element exists.
 local savedFlags = {}
+local flagDefs = {}
+local flagValues = {}
 local flagCount = 0
 
 local function nextFlag()
@@ -521,26 +554,208 @@ local function nextFlag()
     return "__flag_" .. flagCount
 end
 
+local function registerFlag(name, default, kind)
+    if not name then return end
+    if not flagDefs[name] then
+        flagDefs[name] = {Default = default, Kind = kind}
+    end
+    if flagValues[name] == nil then
+        flagValues[name] = default
+    end
+end
+
+-- saved key for the gate, tied to the hwid so a key pasted onto another
+-- machine dont just quietly work
+local KEY_FOLDER = "RUI"
+local keyFileName = KEY_FOLDER .. "/key.txt"
+
+local function getHwid()
+    if gethwid then
+        local ok, id = pcall(gethwid)
+        if ok and id then
+            return tostring(id)
+        end
+    end
+    return "nohwid"
+end
+
+local function readKey()
+    if not isfile or not readfile then return nil end
+    local ok, raw = pcall(function()
+        if not isfile(keyFileName) then return nil end
+        return readfile(keyFileName)
+    end)
+    if not ok or not raw then return nil end
+    local key, hwid = tostring(raw):match("^(.-)|(.*)$")
+    if not key or key == "" or hwid ~= getHwid() then return nil end
+    return key
+end
+
+local function writeKey(key)
+    if not writefile then return end
+    pcall(function()
+        if isfolder and not isfolder(KEY_FOLDER) then makefolder(KEY_FOLDER) end
+        writefile(keyFileName, key .. "|" .. getHwid())
+    end)
+end
+
+local function clearKey()
+    local del = delfile or deletefile
+    if not del or not isfile then return end
+    pcall(function()
+        if isfile(keyFileName) then del(keyFileName) end
+    end)
+end
+
+-- ============ configs ============
+local function storeFlag(name, val)
+    if not name then return end
+    flagValues[name] = val
+    local obj = savedFlags[name]
+    if obj then obj.Value = val end
+end
+
+-- elements build lazy so they have to start from whatever the loaded config says,
+-- otherwise opening a tab for the first time after a load stomps the saved value
+local function flagStart(compDef, fallback)
+    if compDef.Flag then
+        local v = flagValues[compDef.Flag]
+        if v ~= nil then return v end
+    end
+    return fallback
+end
+
+-- saved ui setups, name to json in RUI/Configs
+local CONFIG_FOLDER = "RUI/Configs"
+
+local function cleanCfgName(name)
+    name = tostring(name or ""):gsub("[^%w%-_]", "")
+    if #name == 0 then return nil end
+    if #name > 40 then name = name:sub(1, 40) end
+    return name
+end
+
+local function cfgPath(name)
+    return CONFIG_FOLDER .. "/" .. name .. ".cfg"
+end
+
+local function ensureFolder()
+    if not isfolder or not makefolder then return end
+    if not isfolder(KEY_FOLDER) then makefolder(KEY_FOLDER) end
+    if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
+end
+
+local function writeJson(path, data)
+    if not writefile then return false end
+    local ok = pcall(function()
+        ensureFolder()
+        writefile(path, HttpService:JSONEncode(data))
+    end)
+    return ok
+end
+
+local function readJson(path)
+    if not isfile or not readfile then return nil end
+    local ok, raw = pcall(function()
+        if not isfile(path) then return nil end
+        return readfile(path)
+    end)
+    if not ok or not raw then return nil end
+    local ok2, data = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if not ok2 or type(data) ~= "table" then return nil end
+    return data
+end
+
 -- main lib
 local Library = {
     Windows = {},
     Unloaded = false,
     ToggleKeybind = Enum.KeyCode.RightShift,
-    Toggles = {}
+    -- key services, plug one in before CreateWindow and the gate just works
+    Services = {},
+    -- flip on if u want errors popping up instead of vanishing
+    Debug = false,
+    Gate = nil
 }
 
 function Library:SafeCallback(callback, ...)
     if not callback then return end
     local args = {...}
     task.spawn(function()
-        pcall(function()
+        local ok, err = pcall(function()
             callback(unpack(args))
         end)
+        if not ok and Library.Debug then
+            notifs:Notify("Error", tostring(err), 8)
+        end
     end)
 end
 
 function Library:Notify(title, desc, duration)
     return notifs:Notify(title, desc, duration)
+end
+
+-- ---- theme stuff, was only reachable from the customize tab before ----
+
+function Library:SetTheme(name)
+    Theme:SetTheme(name)
+    return self:GetCurrentTheme()
+end
+
+function Library:GetThemes()
+    local names = {}
+    for name in pairs(Theme.Themes) do
+        if name ~= "Default" then
+            table.insert(names, name)
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+function Library:GetCurrentTheme()
+    return Theme.CurrentTheme
+end
+
+-- lets people drop in their own presets without editing the table
+function Library:AddTheme(name, colors)
+    if type(name) ~= "string" or type(colors) ~= "table" then return false end
+    local full = {}
+    local base = Theme.Themes[Theme.CurrentTheme] or Theme.Themes.Midnight
+    for key, val in pairs(base) do
+        full[key] = val
+    end
+    for key, val in pairs(colors) do
+        full[key] = val
+    end
+    Theme.Themes[name] = full
+    return true
+end
+
+-- ---- key services ----
+
+function Library:RegisterService(name, def)
+    if type(name) ~= "string" or type(def) ~= "table" then return false end
+    self.Services[name] = def
+    return true
+end
+
+function Library:HasKey()
+    local e = (getgenv and getgenv()) or _G
+    return e.SCRIPT_KEY ~= nil
+end
+
+function Library:WaitForKey(timeout)
+    local deadline = timeout and (os.clock() + timeout) or nil
+    while not self:HasKey() do
+        if deadline and os.clock() > deadline then
+            return false
+        end
+        task.wait(0.1)
+    end
+    return true
 end
 
 function Library:Unload()
@@ -561,15 +776,341 @@ function Library:Unload()
     end
     table.clear(Theme.themed)
     table.clear(savedFlags)
+    table.clear(flagValues)
     table.clear(toggleRefresh)
-    table.clear(Library.Toggles)
     table.clear(Library.Windows)
 end
 
+function Library:GetWindow()
+    return self.Windows[1]
+end
+
+-- ============ configs ============
+-- flags go in as plain values, a keybind gets stored by its name since json
+-- has no idea what an Enum is
+
+local function packFlags()
+    local out = {}
+    for name, def in pairs(flagDefs) do
+        local val = flagValues[name]
+        if val == nil then
+            val = def.Default
+        end
+        if typeof(val) == "EnumItem" then
+            val = val.Name
+        elseif type(val) == "boolean" or type(val) == "number" or type(val) == "string" then
+            -- already json friendly
+        else
+            val = tostring(val)
+        end
+        out[name] = val
+    end
+    return out
+end
+
+local function unpackFlags(packed)
+    if type(packed) ~= "table" then return end
+    for name, raw in pairs(packed) do
+        local def = flagDefs[name]
+        if def then
+            local val = raw
+            if def.Kind == "Keybind" and type(raw) == "string" then
+                val = Enum.KeyCode[raw] or nil
+            elseif def.Kind == "Slider" and type(raw) == "number" then
+                val = math.clamp(math.floor(raw), def.Min, def.Max)
+            elseif def.Kind == "Toggle" then
+                val = raw == true
+            end
+            flagValues[name] = val
+            -- only push into the ui if that element happens to be built already,
+            -- otherwise it picks this up when the tab builds
+            local obj = savedFlags[name]
+            if obj and type(obj.Set) == "function" then
+                pcall(function() obj:Set(val) end)
+            end
+        end
+    end
+end
+
+function Library:SaveConfig(name)
+    local clean = cleanCfgName(name)
+    if not clean then
+        self:Notify("Config", "That name has nothing usable in it.", 3)
+        return false
+    end
+
+    local payload = {
+        Theme = Theme.CurrentTheme,
+        Flags = packFlags()
+    }
+
+    local win = self:GetWindow()
+    if win and win.CollectConfig then
+        local extra = win:CollectConfig()
+        if type(extra) == "table" then
+            for k, v in pairs(extra) do
+                payload[k] = v
+            end
+        end
+    end
+
+    local ok = writeJson(cfgPath(clean), payload)
+    if ok then
+        self:Notify("Config", "Saved \"" .. clean .. "\".", 3)
+    else
+        self:Notify("Config", "Cant write to disk here.", 4)
+    end
+    return ok
+end
+
+function Library:LoadConfig(name)
+    local clean = cleanCfgName(name)
+    if not clean then
+        self:Notify("Config", "That name has nothing usable in it.", 3)
+        return false
+    end
+
+    local data = readJson(cfgPath(clean))
+    if not data then
+        self:Notify("Config", "No config called \"" .. clean .. "\".", 4)
+        return false
+    end
+
+    if data.Theme and Theme.Themes[data.Theme] then
+        Theme:SetTheme(data.Theme)
+    end
+
+    unpackFlags(data.Flags)
+
+    local win = self:GetWindow()
+    if win and win.ApplyConfig then
+        pcall(function() win:ApplyConfig(data) end)
+    end
+
+    self:Notify("Config", "Loaded \"" .. clean .. "\".", 3)
+    return true
+end
+
+function Library:DeleteConfig(name)
+    local clean = cleanCfgName(name)
+    local del = delfile or deletefile
+    if not clean or not del or not isfile then return false end
+    local ok = pcall(function()
+        if isfile(cfgPath(clean)) then del(cfgPath(clean)) end
+    end)
+    if ok then
+        self:Notify("Config", "Deleted \"" .. clean .. "\".", 3)
+    end
+    return ok
+end
+
+function Library:GetConfigs()
+    local out = {}
+    if not isfolder or not isfile then return out end
+    local ok = pcall(function()
+        if not isfolder(CONFIG_FOLDER) then return end
+        -- isfolder gives back false or the listing, so only read it once we know
+        local listing = isfolder(CONFIG_FOLDER)
+        if type(listing) ~= "table" then return end
+        for _, file in ipairs(listing) do
+            local name = tostring(file):gsub("%.cfg$", "")
+            if name ~= "" then
+                table.insert(out, name)
+            end
+        end
+    end)
+    if not ok then return {} end
+    table.sort(out)
+    return out
+end
+
+-- ============ modals ============
+local modalGui = nil
+
+local function getModalGui()
+    if modalGui and modalGui.Parent then return modalGui end
+    modalGui = mk("ScreenGui", {
+        Name = "RUI_Modal",
+        Parent = GetHui(),
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = 999
+    })
+    ProtectGui(modalGui)
+    track(modalGui)
+    return modalGui
+end
+
+-- opts: Title, Content, Confirm, Cancel, Danger, OnConfirm
+function Library:Modal(opts)
+    opts = opts or {}
+    local parent = getModalGui()
+
+    local overlay = mk("Frame", {
+        Parent = parent,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 100
+    })
+    track(overlay)
+
+    local card = mk("CanvasGroup", {
+        Parent = overlay,
+        Size = UDim2.new(0, 380, 0, 40),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Theme.Themes.Default.Container,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        ClipsDescendants = true
+    })
+    track(card)
+    Theme:Register(card, "BackgroundColor3", "Container")
+    mk("UICorner", {Parent = card, CornerRadius = UDim.new(0, 12)})
+    Theme:Register(mk("UIStroke", {Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5}), "Color", "Border")
+
+    local body = mk("Frame", { Parent = card, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1 })
+    local bodyLayout = mk("UIListLayout", { Parent = body, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 12) })
+    mk("UIPadding", {
+        Parent = body,
+        PaddingTop = UDim.new(0, 20),
+        PaddingBottom = UDim.new(0, 20),
+        PaddingLeft = UDim.new(0, 20),
+        PaddingRight = UDim.new(0, 20)
+    })
+
+    local bodyTitle = mk("TextLabel", {
+        Parent = body,
+        Size = UDim2.new(1, 0, 0, 22),
+        BackgroundTransparency = 1,
+        Text = opts.Title or "Are you sure?",
+        Font = Enum.Font.GothamBold,
+        TextSize = 17,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextWrapped = true,
+        LayoutOrder = 1
+    })
+    Theme:Register(bodyTitle, "TextColor3", "Text")
+
+    if opts.Content then
+        local bodyText = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundTransparency = 1,
+            Text = opts.Content,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 2
+        })
+        Theme:Register(bodyText, "TextColor3", "SubText")
+    end
+
+    local btnRow = mk("Frame", {
+        Parent = body,
+        Size = UDim2.new(1, 0, 0, 32),
+        BackgroundTransparency = 1,
+        LayoutOrder = 3
+    })
+    mk("UIListLayout", {
+        Parent = btnRow,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 10),
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right
+    })
+
+    local closed = false
+    local function shut()
+        if closed then return end
+        closed = true
+        tween(overlay, {BackgroundTransparency = 1}, 0.2)
+        tween(card, {GroupTransparency = 1}, 0.2)
+        task.delay(0.2, function()
+            if overlay.Parent then overlay:Destroy() end
+        end)
+    end
+
+    local function makeBtn(text, order, tint, cb)
+        local b = mk("TextButton", {
+            Parent = btnRow,
+            Size = UDim2.new(0, tint and 96 or 84, 1, 0),
+            LayoutOrder = order,
+            BackgroundColor3 = tint or Theme.Themes.Default.Container,
+            BorderSizePixel = 0,
+            Text = text,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextColor3 = tint and Theme.Themes.Default.Background or Theme.Themes.Default.Text,
+            AutoButtonColor = false
+        })
+        mk("UICorner", {Parent = b, CornerRadius = UDim.new(0, 6)})
+        local hover = tint and tint:Lerp(Color3.new(1, 1, 1), 0.15) or Theme.Themes.Default.Hover
+        local click = tint and tint:Lerp(Color3.new(0, 0, 0), 0.15) or Theme.Themes.Default.Click
+        b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = hover}, 0.15) end)
+        b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = tint or Theme.Themes.Default.Container}, 0.15) end)
+        b.MouseButton1Down:Connect(function() tween(b, {BackgroundColor3 = click}, 0.1) end)
+        b.MouseButton1Up:Connect(function() tween(b, {BackgroundColor3 = hover}, 0.1) end)
+        b.MouseButton1Click:Connect(function()
+            shut()
+            if cb then pcall(cb) end
+        end)
+        track(b)
+        return b
+    end
+
+    if opts.Cancel then
+        makeBtn(opts.Cancel, 1, nil, nil)
+    end
+    makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm)
+
+    -- clicking the dark bit counts as cancel, way less annoying than a forced choice
+    track(overlay.InputBegan:Connect(function(input)
+        if input.Target == overlay then
+            shut()
+        end
+    end))
+
+    local function sizeCard()
+        if card.Parent then
+            card.Size = UDim2.new(0, 380, 0, bodyLayout.AbsoluteContentSize.Y + 40)
+        end
+    end
+    track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
+    sizeCard()
+
+    tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
+    tween(card, {GroupTransparency = 0}, 0.3, Enum.EasingStyle.Quint)
+end
+
+function Library:Confirm(title, content, onConfirm)
+    return self:Modal({
+        Title = title,
+        Content = content,
+        Confirm = "Yes",
+        Cancel = "Cancel",
+        OnConfirm = onConfirm
+    })
+end
+
+function Library:Alert(title, content)
+    return self:Modal({
+        Title = title,
+        Content = content,
+        Confirm = "Ok"
+    })
+end
+
 function Library:ResetAll()
-    for _, flag in pairs(savedFlags) do
-        if flag and flag.Default ~= nil and type(flag.Set) == "function" then
-            flag:Set(flag.Default)
+    for name, def in pairs(flagDefs) do
+        local obj = savedFlags[name]
+        -- element isnt built yet, just remember the default for when it is
+        flagValues[name] = def.Default
+        if obj and obj.Default ~= nil and type(obj.Set) == "function" then
+            pcall(function() obj:Set(obj.Default) end)
         end
     end
 end
@@ -606,6 +1147,7 @@ function Library:CreateWindow(options)
     })
     ProtectGui(gui)
     track(gui)
+    bringToFront(gui)
 
     notifs:Init(GetHui())
 
@@ -621,6 +1163,13 @@ function Library:CreateWindow(options)
     mk("UICorner", { Parent = canvasGroup, CornerRadius = UDim.new(0, 12) })
     local stroke = mk("UIStroke", { Parent = canvasGroup, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
     Theme:Register(stroke, "Color", "Border")
+
+    -- clicking anywhere in the window pops it above the other ones
+    track(canvasGroup.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            bringToFront(gui)
+        end
+    end))
 
     -- canvas clips stuff so shadow has to live on its own frame next to it
     local shadowFrame = mk("Frame", {
@@ -705,7 +1254,10 @@ function Library:CreateWindow(options)
     local smoothY = dragBar.Position.Y.Offset
     local snapped = false
 
-    local renderConn = RunService.RenderStepped:Connect(function()
+    -- declared first then assigned, otherwise the closure below grabs the global
+    -- one and the self-disconnect never fires
+    local renderConn
+    renderConn = RunService.RenderStepped:Connect(function()
         if not dragBar or not dragBar.Parent then
             if renderConn then renderConn:Disconnect() end
             return
@@ -839,9 +1391,28 @@ function Library:CreateWindow(options)
         DefaultSize = size,
         DefaultPosition = UDim2.new(0.5, 0, 0.5, 0),
         DefaultMaximized = false,
+        Keybind = Library.ToggleKeybind,
+        Locked = false,
         nextOrder = 2,
         switching = false
     }
+
+    -- these live up here because the settings tab below wires em up, and a
+    -- callback that only runs later still has to see the key exist
+
+    function windowObj:SetKeybind(keyCode)
+        windowObj.Keybind = keyCode or windowObj.Keybind
+    end
+
+    function windowObj:Lock()
+        windowObj.Locked = true
+        canvasGroup.GroupTransparency = 1
+    end
+
+    function windowObj:Unlock()
+        windowObj.Locked = false
+        canvasGroup.GroupTransparency = windowObj.UserOpacity
+    end
 
     track(closeBtn.MouseButton1Click:Connect(function()
         windowObj.Hidden = true
@@ -849,7 +1420,7 @@ function Library:CreateWindow(options)
         tween(stroke, {Transparency = 1}, 0.3)
         local sh = shadowFrame:FindFirstChild("Shadow")
         if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
-        if isMobile and fab then
+        if fab then
             fab.Position = fabStoredPos
             fab.Visible = true
         end
@@ -951,8 +1522,8 @@ function Library:CreateWindow(options)
         Visible = true
     })
     
-    -- little floating open btn for phone
-    if isMobile then
+    -- little floating open btn, phones always get one, desktop only if they ask
+    if isMobile or options.OpenButton then
         local fabWidth = 90
         local fabHeight = 36
 
@@ -1079,6 +1650,8 @@ function Library:CreateWindow(options)
                 fabStartObjPos = nil
                 -- pop back
                 tween(fab, {Size = UDim2.new(0, fabWidth, 0, fabHeight)}, 0.2, Enum.EasingStyle.Back)
+                -- btn is there to OPEN the window so it gets out of the way once its open
+                fab.Visible = windowObj.Hidden
                 if not wasDrag then
                     -- tapped, toggle ui same as rightshift
                     if windowObj.Hidden then
@@ -1118,16 +1691,90 @@ function Library:CreateWindow(options)
         end))
     end
     
+    -- resize grip, has to live inside the canvas because canvas clips its children
+    if options.Resizable ~= false then
+        local grip = mk("TextButton", {
+            Parent = canvasGroup,
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(1, -18, 1, -18),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false
+        })
+        local gripDot = mk("Frame", {
+            Parent = grip,
+            Size = UDim2.new(0, 7, 0, 7),
+            Position = UDim2.new(1, -5, 1, -5),
+            BackgroundColor3 = Theme.Themes.Default.SubText,
+            BackgroundTransparency = 0.55,
+            BorderSizePixel = 0
+        })
+        mk("UICorner", {Parent = gripDot, CornerRadius = UDim.new(1, 0)})
+        Theme:Register(gripDot, "BackgroundColor3", "SubText")
+
+        local resizing = false
+        local grabStart, grabSize
+
+        track(grip.InputBegan:Connect(function(input)
+            if windowObj.Maximized or windowObj.Minimized then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                resizing = true
+                grabStart = input.Position
+                grabSize = canvasGroup.AbsoluteSize
+                tween(gripDot, {BackgroundTransparency = 0}, 0.15)
+            end
+        end))
+
+        track(UserInputService.InputChanged:Connect(function(input)
+            if not resizing then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local curViewport = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1920, 1080)
+            local delta = input.Position - grabStart
+            local w = math.clamp(grabSize.X + delta.X, 400, math.max(400, curViewport.X - 20))
+            local h = math.clamp(grabSize.Y + delta.Y, 260, math.max(260, curViewport.Y - 20))
+            canvasGroup.Size = UDim2.new(0, w, 0, h)
+        end))
+
+        track(UserInputService.InputEnded:Connect(function(input)
+            if not resizing then return end
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                resizing = false
+                tween(gripDot, {BackgroundTransparency = 0.55}, 0.2)
+            end
+        end))
+    end
+
     track(UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
-        if input.KeyCode == self.ToggleKeybind then
+        -- escape closes it unless a keybind element is waiting on a key
+        if input.KeyCode == Enum.KeyCode.Escape and not windowObj.Locked and not windowObj.Hidden and not listeningKeybind then
+            windowObj.Hidden = true
+            tween(canvasGroup, {GroupTransparency = 1}, 0.3)
+            tween(stroke, {Transparency = 1}, 0.3)
+            local escSh = shadowFrame:FindFirstChild("Shadow")
+            if escSh then tween(escSh, {ImageTransparency = 1}, 0.3) end
+            if fab then
+                fab.Position = fabStoredPos
+                fab.Visible = true
+            end
+            dragBar.Visible = false
+            task.delay(0.3, function()
+                if windowObj.Hidden then
+                    canvasGroup.Visible = false
+                    shadowFrame.Visible = false
+                end
+            end)
+            return
+        end
+        if input.KeyCode == windowObj.Keybind then
             windowObj.Hidden = not windowObj.Hidden
             if windowObj.Hidden then
                 tween(canvasGroup, {GroupTransparency = 1}, 0.3)
                 tween(stroke, {Transparency = 1}, 0.3)
                 local sh = shadowFrame:FindFirstChild("Shadow")
                 if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
-                if isMobile and fab then
+                if fab then
                     fab.Position = fabStoredPos
                     fab.Visible = true
                 end
@@ -1148,6 +1795,9 @@ function Library:CreateWindow(options)
                 if not windowObj.Minimized then
                     dragBar.Visible = true
                 end
+                if fab then
+                    fab.Visible = false
+                end
             end
         end
     end))
@@ -1158,7 +1808,7 @@ function Library:CreateWindow(options)
             Size = UDim2.new(1, -20, 0, 32),
             BackgroundTransparency = 1,
             Text = name,
-            Font = Enum.Font.GothamSemibold,
+            Font = Enum.Font.GothamMedium,
             TextSize = 13,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
@@ -1289,34 +1939,97 @@ function Library:CreateWindow(options)
                 Theme:Register(divider, "BackgroundColor3", "Border")
                 
                 for _, compDef in ipairs(secDef.Components) do
-                    if compDef.Type == "Button" then
+                    if compDef.Type == "Label" then
+                        local lblFrame = mk("Frame", {
+                            Parent = secFrame,
+                            Size = UDim2.new(1, 0, 0, compDef.Desc and 38 or 20),
+                            BackgroundTransparency = 1
+                        })
+                        local lbl = mk("TextLabel", {
+                            Parent = lblFrame,
+                            Size = UDim2.new(1, 0, 0, 18),
+                            BackgroundTransparency = 1,
+                            Text = compDef.Name,
+                            Font = Enum.Font.GothamMedium,
+                            TextSize = 13,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd
+                        })
+                        Theme:Register(lbl, "TextColor3", "Text")
+                        if compDef.Desc then
+                            local desc = mk("TextLabel", {
+                                Parent = lblFrame,
+                                Size = UDim2.new(1, 0, 0, 16),
+                                Position = UDim2.new(0, 0, 0, 20),
+                                BackgroundTransparency = 1,
+                                Text = compDef.Desc,
+                                Font = Enum.Font.GothamMedium,
+                                TextSize = 12,
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                TextTruncate = Enum.TextTruncate.AtEnd
+                            })
+                            Theme:Register(desc, "TextColor3", "SubText")
+                        end
+
+                    elseif compDef.Type == "Divider" then
+                        local line = mk("Frame", {
+                            Parent = secFrame,
+                            Size = UDim2.new(1, 0, 0, 1),
+                            BackgroundTransparency = 0.5,
+                            BorderSizePixel = 0
+                        })
+                        Theme:Register(line, "BackgroundColor3", "Border")
+
+                    elseif compDef.Type == "Button" then
+                        local variant = compDef.Variant or "Default"
+                        local baseCol, hoverCol, clickCol
+                        if variant == "Danger" then
+                            baseCol = DANGER
+                            hoverCol = DANGER:Lerp(Color3.new(0, 0, 0), 0.12)
+                            clickCol = DANGER:Lerp(Color3.new(0, 0, 0), 0.24)
+                        elseif variant == "Accent" then
+                            baseCol = Theme.Themes.Default.Accent
+                            hoverCol = Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.15)
+                            clickCol = Theme.Themes.Default.Accent:Lerp(Color3.new(0, 0, 0), 0.15)
+                        else
+                            baseCol = Theme.Themes.Default.Container
+                            hoverCol = Theme.Themes.Default.Hover
+                            clickCol = Theme.Themes.Default.Click
+                        end
                         local btn = mk("TextButton", {
                             Parent = secFrame,
                             Size = UDim2.new(1, 0, 0, 32),
+                            BackgroundColor3 = baseCol,
                             AutoButtonColor = false,
                             Text = compDef.Name,
-                            Font = Enum.Font.GothamSemibold,
-                            TextSize = 13
+                            Font = Enum.Font.GothamMedium,
+                            TextSize = 13,
+                            TextColor3 = variant == "Accent" and Theme.Themes.Default.Background or Theme.Themes.Default.Text
                         })
-                        Theme:Register(btn, "BackgroundColor3", "Container")
-                        Theme:Register(btn, "TextColor3", "Text")
+                        if variant == "Accent" then
+                            Theme:Register(btn, "BackgroundColor3", "Accent")
+                            Theme:Register(btn, "TextColor3", "Background")
+                        else
+                            Theme:Register(btn, "BackgroundColor3", "Container")
+                            Theme:Register(btn, "TextColor3", "Text")
+                        end
                         mk("UICorner", {Parent = btn, CornerRadius = UDim.new(0, 6)})
                         local stroke = mk("UIStroke", {Parent = btn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5})
                         Theme:Register(stroke, "Color", "Border")
-                        
+
                         track(btn.MouseEnter:Connect(function()
-                            tween(btn, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.2)
+                            tween(btn, {BackgroundColor3 = hoverCol}, 0.2)
                             tween(stroke, {Transparency = 0}, 0.2)
                         end))
                         track(btn.MouseLeave:Connect(function()
-                            tween(btn, {BackgroundColor3 = Theme.Themes.Default.Container}, 0.2)
+                            tween(btn, {BackgroundColor3 = baseCol}, 0.2)
                             tween(stroke, {Transparency = 0.5}, 0.2)
                         end))
                         track(btn.MouseButton1Down:Connect(function()
-                            tween(btn, {BackgroundColor3 = Theme.Themes.Default.Click}, 0.1)
+                            tween(btn, {BackgroundColor3 = clickCol}, 0.1)
                         end))
                         track(btn.MouseButton1Up:Connect(function()
-                            tween(btn, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.1)
+                            tween(btn, {BackgroundColor3 = hoverCol}, 0.1)
                         end))
                         track(btn.MouseButton1Click:Connect(function()
                             Library:SafeCallback(compDef.Callback)
@@ -1371,7 +2084,7 @@ function Library:CreateWindow(options)
                              Rotation = 45
                          })
 
-                         local state = compDef.Default or false
+                         local state = flagStart(compDef, compDef.Default or false)
                          local function updateState(anim)
                              local onPos = UDim2.new(1, -indSize - indOff, 0.5, -indSize/2)
                              local offPos = UDim2.new(0, indOff, 0.5, -indSize/2)
@@ -1407,7 +2120,6 @@ function Library:CreateWindow(options)
                          end
 
                           updateState(false)
-                          table.insert(Library.Toggles, updateState)
                           table.insert(toggleRefresh, updateState)
 
                          local function toggle()
@@ -1418,9 +2130,7 @@ function Library:CreateWindow(options)
                                  tween(indicator, {Size = UDim2.new(0, indSize, 0, indSize)}, 0.18, Enum.EasingStyle.Back)
                              end)
                           Library:SafeCallback(compDef.Callback, state)
-                              if compDef.Flag and savedFlags[compDef.Flag] then
-                                  savedFlags[compDef.Flag].Value = state
-                              end
+                              storeFlag(compDef.Flag, state)
                          end
 
                          track(box.MouseButton1Click:Connect(toggle))
@@ -1552,7 +2262,7 @@ function Library:CreateWindow(options)
                         local dragging = false
                         local hover = false
                         local dragInput = nil
-                        local value = compDef.Default or compDef.Min
+                        local value = flagStart(compDef, compDef.Default or compDef.Min)
                         tooltipText.Text = tostring(value)
 
                         local function setKnobSize(size)
@@ -1572,9 +2282,7 @@ function Library:CreateWindow(options)
                             tooltipText.Text = tostring(value)
                             setFill(percent)
                             Library:SafeCallback(compDef.Callback, value)
-                            if compDef.Flag and savedFlags[compDef.Flag] then
-                                savedFlags[compDef.Flag].Value = value
-                            end
+                            storeFlag(compDef.Flag, value)
                         end
 
                         local function startDrag(input)
@@ -1668,6 +2376,7 @@ function Library:CreateWindow(options)
                     elseif compDef.Type == "Dropdown" then
                         local dpHeight = 52
                         local dpExpanded = 160
+                        local dValue = flagStart(compDef, compDef.Default)
                         local dpFrame = mk("Frame", {
                             Parent = secFrame,
                             Size = UDim2.new(1, 0, 0, dpHeight),
@@ -1693,7 +2402,7 @@ function Library:CreateWindow(options)
                             Parent = dpFrame,
                             Size = UDim2.new(1, 0, 0, boxHeight),
                             Position = UDim2.new(0, 0, 0, 24),
-                            Text = " " .. tostring(compDef.Default or "Select..."),
+                            Text = " " .. tostring(dValue or "Select..."),
                             Font = Enum.Font.GothamMedium,
                             TextSize = 13,
                             TextXAlignment = Enum.TextXAlignment.Left,
@@ -1710,7 +2419,7 @@ function Library:CreateWindow(options)
                             Size = UDim2.new(0, 20, 1, 0),
                             Position = UDim2.new(1, -25, 0, 0),
                             BackgroundTransparency = 1,
-                            Text = "▼",
+                            Text = "â–¼",
                             Font = Enum.Font.Gotham,
                             TextSize = 10
                         })
@@ -1747,7 +2456,6 @@ function Library:CreateWindow(options)
                         })
                         
                         local expanded = false
-                        local dValue = compDef.Default
                         local optionBtns = {}
                         
                         for i, item in ipairs(dpItems) do
@@ -1770,7 +2478,7 @@ function Library:CreateWindow(options)
                                 Size = UDim2.new(0, 16, 1, 0),
                                 Position = UDim2.new(1, -18, 0, 0),
                                 BackgroundTransparency = 1,
-                                Text = "✓",
+                                Text = "âœ“",
                                 Font = Enum.Font.GothamBold,
                                 TextSize = 12,
                                 TextXAlignment = Enum.TextXAlignment.Center,
@@ -1807,9 +2515,7 @@ function Library:CreateWindow(options)
                                  Theme:Register(opt, "TextColor3", "Text")
                                  optCheck.Visible = true
                                 Library:SafeCallback(compDef.Callback, dValue)
-                                if compDef.Flag and savedFlags[compDef.Flag] then
-                                    savedFlags[compDef.Flag].Value = dValue
-                                end
+                                storeFlag(compDef.Flag, dValue)
 
                                 expanded = false
                                 tween(dpFrame, {Size = UDim2.new(1, 0, 0, dpHeight)}, 0.25, Enum.EasingStyle.Quint)
@@ -1849,6 +2555,155 @@ function Library:CreateWindow(options)
                              end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
+
+                    elseif compDef.Type == "Input" then
+                        local inpFrame = mk("Frame", {
+                            Parent = secFrame,
+                            Size = UDim2.new(1, 0, 0, 54),
+                            BackgroundTransparency = 1
+                        })
+                        local lbl = mk("TextLabel", {
+                            Parent = inpFrame,
+                            Size = UDim2.new(1, 0, 0, 18),
+                            BackgroundTransparency = 1,
+                            Text = compDef.Name,
+                            Font = Enum.Font.GothamMedium,
+                            TextSize = 13,
+                            TextXAlignment = Enum.TextXAlignment.Left
+                        })
+                        Theme:Register(lbl, "TextColor3", "Text")
+
+                        local iValue = flagStart(compDef, compDef.Default or "")
+                        local inp = mk("TextBox", {
+                            Parent = inpFrame,
+                            Size = UDim2.new(1, 0, 0, 32),
+                            Position = UDim2.new(0, 0, 0, 22),
+                            BackgroundColor3 = Theme.Themes.Default.Container,
+                            BorderSizePixel = 0,
+                            Text = iValue,
+                            PlaceholderText = compDef.Placeholder or "",
+                            TextSize = 13,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            ClearTextOnFocus = false
+                        })
+                        Theme:Register(inp, "BackgroundColor3", "Container")
+                        Theme:Register(inp, "TextColor3", "Text")
+                        Theme:Register(inp, "PlaceholderColor3", "SubText")
+                        mk("UICorner", {Parent = inp, CornerRadius = UDim.new(0, 6)})
+                        local inpStroke = mk("UIStroke", {Parent = inp, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5})
+                        Theme:Register(inpStroke, "Color", "Border")
+
+                        track(inp.Focused:Connect(function()
+                            tween(inpStroke, {Color = Theme.Themes.Default.Accent, Transparency = 0}, 0.15)
+                        end))
+                        track(inp.FocusLost:Connect(function()
+                            tween(inpStroke, {Color = Theme.Themes.Default.Border, Transparency = 0.5}, 0.2)
+                            local newVal = inp.Text
+                            if newVal ~= iValue then
+                                iValue = newVal
+                                Library:SafeCallback(compDef.Callback, iValue)
+                                storeFlag(compDef.Flag, iValue)
+                            end
+                        end))
+
+                        local inpFlag = {
+                            Value = iValue,
+                            Default = compDef.Default,
+                            Set = function(self, val)
+                                iValue = tostring(val or "")
+                                self.Value = iValue
+                                inp.Text = iValue
+                                Library:SafeCallback(compDef.Callback, iValue)
+                            end
+                        }
+                        if compDef.Flag then savedFlags[compDef.Flag] = inpFlag end
+
+                    elseif compDef.Type == "Keybind" then
+                        local kbFrame = mk("Frame", {
+                            Parent = secFrame,
+                            Size = UDim2.new(1, 0, 0, 32),
+                            BackgroundTransparency = 1
+                        })
+                        local lbl = mk("TextLabel", {
+                            Parent = kbFrame,
+                            Size = UDim2.new(1, -100, 1, 0),
+                            BackgroundTransparency = 1,
+                            Text = compDef.Name,
+                            Font = Enum.Font.GothamMedium,
+                            TextSize = 13,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd
+                        })
+                        Theme:Register(lbl, "TextColor3", "SubText")
+
+                        local kbValue = flagStart(compDef, compDef.Default)
+                        local listening = false
+                        local box = mk("TextButton", {
+                            Parent = kbFrame,
+                            Size = UDim2.new(0, 90, 0, 24),
+                            Position = UDim2.new(1, -90, 0.5, -12),
+                            BackgroundColor3 = Theme.Themes.Default.Container,
+                            BorderSizePixel = 0,
+                            Text = kbValue and kbValue.Name or "None",
+                            Font = Enum.Font.GothamMedium,
+                            TextSize = 12,
+                            AutoButtonColor = false
+                        })
+                        Theme:Register(box, "BackgroundColor3", "Container")
+                        mk("UICorner", {Parent = box, CornerRadius = UDim.new(0, 6)})
+                        local boxStroke = mk("UIStroke", {Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5})
+                        Theme:Register(boxStroke, "Color", "Border")
+
+                        local function setListening(on)
+                            listening = on
+                            listeningKeybind = on
+                            box.Text = on and "..." or (kbValue and kbValue.Name or "None")
+                            tween(box, {BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container}, 0.2)
+                            tween(boxStroke, {Color = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Border, Transparency = on and 0 or 0.5}, 0.2)
+                            Theme:Register(box, "BackgroundColor3", on and "Accent" or "Container")
+                            Theme:Register(boxStroke, "Color", on and "Accent" or "Border")
+                        end
+
+                        track(box.MouseButton1Click:Connect(function()
+                            if listening then
+                                setListening(false)
+                                return
+                            end
+                            setListening(true)
+                        end))
+
+                        -- grab the next key they press, escape lets em bail
+                        local kbConn = nil
+                        kbConn = UserInputService.InputBegan:Connect(function(input, processed)
+                            if not listening then return end
+                            if processed and input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+                            if input.KeyCode == Enum.KeyCode.Escape then
+                                -- cancelled, put it back how it was
+                                setListening(false)
+                                return
+                            end
+
+                            kbValue = input.KeyCode
+                            setListening(false)
+                            box.Text = kbValue.Name
+                            Library:SafeCallback(compDef.Callback, kbValue)
+                            storeFlag(compDef.Flag, kbValue)
+                        end)
+                        track(kbConn)
+
+                        local kbFlag = {
+                            Value = kbValue,
+                            Default = compDef.Default,
+                            Set = function(self, val)
+                                kbValue = val
+                                self.Value = val
+                                listening = false
+                                box.Text = val and val.Name or "None"
+                                Library:SafeCallback(compDef.Callback, val)
+                            end
+                        }
+                        if compDef.Flag then savedFlags[compDef.Flag] = kbFlag end
                     end
                 end
                 
@@ -1870,22 +2725,48 @@ function Library:CreateWindow(options)
             
             local secMethods = {}
             
-            function secMethods:CreateButton(btnName, callback)
-                table.insert(secDef.Components, {Type = "Button", Name = btnName, Callback = callback})
+            function secMethods:CreateButton(btnName, callback, variant)
+                table.insert(secDef.Components, {Type = "Button", Name = btnName, Callback = callback, Variant = variant or "Default"})
             end
-            
+
+            -- just text, no state, nothing to save
+            function secMethods:CreateLabel(lblText, desc)
+                table.insert(secDef.Components, {Type = "Label", Name = lblText, Desc = desc})
+            end
+
+            function secMethods:CreateDivider()
+                table.insert(secDef.Components, {Type = "Divider"})
+            end
+
+            function secMethods:CreateInput(inpName, default, placeholder, callback, flagName)
+                if not flagName then flagName = nextFlag() end
+                registerFlag(flagName, default or "", "Input")
+                table.insert(secDef.Components, {Type = "Input", Name = inpName, Default = default or "", Placeholder = placeholder, Callback = callback, Flag = flagName})
+            end
+
+            function secMethods:CreateKeybind(kbName, default, callback, flagName)
+                if not flagName then flagName = nextFlag() end
+                registerFlag(flagName, default, "Keybind")
+                table.insert(secDef.Components, {Type = "Keybind", Name = kbName, Default = default, Callback = callback, Flag = flagName})
+            end
+
             function secMethods:CreateToggle(tglName, default, callback, flagName)
                 if not flagName then flagName = nextFlag() end
+                registerFlag(flagName, default, "Toggle")
                 table.insert(secDef.Components, {Type = "Toggle", Name = tglName, Default = default, Callback = callback, Flag = flagName})
             end
 
             function secMethods:CreateSlider(sldName, min, max, default, callback, flagName)
                 if not flagName then flagName = nextFlag() end
+                registerFlag(flagName, default, "Slider")
+                flagDefs[flagName].Min = min
+                flagDefs[flagName].Max = max
                 table.insert(secDef.Components, {Type = "Slider", Name = sldName, Min = min, Max = max, Default = default, Callback = callback, Flag = flagName})
             end
 
             function secMethods:CreateDropdown(dpName, items, default, callback, flagName)
                 if not flagName then flagName = nextFlag() end
+                registerFlag(flagName, default, "Dropdown")
                 table.insert(secDef.Components, {Type = "Dropdown", Name = dpName, Items = items, Default = default, Callback = callback, Flag = flagName})
             end
             
@@ -2364,7 +3245,7 @@ function Library:CreateWindow(options)
         
         local rejoinBtn = mk("TextButton", {
             Parent = btnRow, Size = UDim2.new(0.5, -4, 1, 0), Text = "Rejoin",
-            Font = Enum.Font.GothamSemibold, TextSize = 13, AutoButtonColor = false
+            Font = Enum.Font.GothamMedium, TextSize = 13, AutoButtonColor = false
         })
         Theme:Register(rejoinBtn, "BackgroundColor3", "Container")
         Theme:Register(rejoinBtn, "TextColor3", "Text")
@@ -2374,7 +3255,7 @@ function Library:CreateWindow(options)
         
         local hopBtn = mk("TextButton", {
             Parent = btnRow, Size = UDim2.new(0.5, -4, 1, 0), Text = "Server Hop",
-            Font = Enum.Font.GothamSemibold, TextSize = 13, AutoButtonColor = false
+            Font = Enum.Font.GothamMedium, TextSize = 13, AutoButtonColor = false
         })
         Theme:Register(hopBtn, "BackgroundColor3", "Container")
         Theme:Register(hopBtn, "TextColor3", "Text")
@@ -2436,7 +3317,7 @@ function Library:CreateWindow(options)
 
         local sortDropdown = mk("TextButton", {
             Parent = sortRow, Size = UDim2.new(1, -80, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-            Text = "  Sort: Players ↓", Font = Enum.Font.GothamMedium, TextSize = 12,
+            Text = "  Sort: Players â†“", Font = Enum.Font.GothamMedium, TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false
         })
         Theme:Register(sortDropdown, "BackgroundColor3", "Container")
@@ -2448,7 +3329,7 @@ function Library:CreateWindow(options)
 
         local refreshBtn = mk("TextButton", {
             Parent = sortRow, Size = UDim2.new(0, 72, 1, 0), Position = UDim2.new(1, -72, 0, 0),
-            Text = "Refresh", Font = Enum.Font.GothamSemibold, TextSize = 13,
+            Text = "Refresh", Font = Enum.Font.GothamMedium, TextSize = 13,
             AutoButtonColor = false
         })
         Theme:Register(refreshBtn, "BackgroundColor3", "Container")
@@ -2537,7 +3418,7 @@ function Library:CreateWindow(options)
                     local joinBtn = mk("TextButton", {
                         Parent = entry, Size = UDim2.new(0, 55, 0, 20), Position = UDim2.new(1, -63, 0.5, -10),
                         Text = isCurrent and "Current" or "Join",
-                        Font = Enum.Font.GothamSemibold, TextSize = 11, AutoButtonColor = false
+                        Font = Enum.Font.GothamMedium, TextSize = 11, AutoButtonColor = false
                     })
                     if isCurrent then
                         Theme:Register(joinBtn, "BackgroundColor3", "Accent")
@@ -2583,10 +3464,10 @@ function Library:CreateWindow(options)
         track(sortDropdown.MouseButton1Click:Connect(function()
             if sortOrder == "Desc" then
                 sortOrder = "Asc"
-                sortDropdown.Text = "  Sort: Players ↑"
+                sortDropdown.Text = "  Sort: Players â†‘"
             else
                 sortOrder = "Desc"
-                sortDropdown.Text = "  Sort: Players ↓"
+                sortDropdown.Text = "  Sort: Players â†“"
             end
             RefreshServers()
         end))
@@ -2613,6 +3494,400 @@ function Library:CreateWindow(options)
         task.delay(0.5, RefreshServersLayout)
     end
     
+    -- key gate, only made when options.KeySystem is set. sits over the window
+    -- until a key goes through, the script sits behind `while not
+    -- getgenv().SCRIPT_KEY do task.wait(0.1) end` til then
+    local gateOverlay, gateCard = nil, nil
+
+    local function closeGate()
+        if not gateOverlay then return end
+        local ov = gateOverlay
+        gateOverlay, gateCard = nil, nil
+        tween(ov, {BackgroundTransparency = 1}, 0.3)
+        task.delay(0.3, function()
+            if ov.Parent then ov:Destroy() end
+        end)
+    end
+
+    local function buildKeyGate(keyOpts)
+        local apiList = keyOpts.API or {}
+        local saveKey = keyOpts.SaveKey ~= false
+        -- the api rows talk to this before its defined below so it has to be local first
+        local sayGate = nil
+
+        local overlay = mk("Frame", {
+            Parent = gui,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 60
+        })
+        gateOverlay = overlay
+        track(overlay)
+
+        local card = mk("CanvasGroup", {
+            Parent = overlay,
+            Size = UDim2.new(0, 420, 0, 40),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Theme.Themes.Default.Container,
+            BorderSizePixel = 0,
+            GroupTransparency = 1,
+            ClipsDescendants = true
+        })
+        gateCard = card
+        Theme:Register(card, "BackgroundColor3", "Container")
+        mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 12) })
+        local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        Theme:Register(cardStroke, "Color", "Border")
+
+        local body = mk("Frame", {
+            Parent = card,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1
+        })
+        local bodyLayout = mk("UIListLayout", {
+            Parent = body,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 12)
+        })
+        mk("UIPadding", {
+            Parent = body,
+            PaddingTop = UDim.new(0, 20),
+            PaddingBottom = UDim.new(0, 20),
+            PaddingLeft = UDim.new(0, 20),
+            PaddingRight = UDim.new(0, 20)
+        })
+
+        local head = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 22),
+            BackgroundTransparency = 1,
+            Text = title,
+            Font = Enum.Font.GothamBold,
+            TextSize = 18,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 1
+        })
+        Theme:Register(head, "TextColor3", "Text")
+
+        local note = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 18),
+            BackgroundTransparency = 1,
+            Text = keyOpts.Note or "Enter your key to continue.",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 2
+        })
+        Theme:Register(note, "TextColor3", "SubText")
+
+        -- api rows, clicking one copies its link
+        for i, entry in ipairs(apiList) do
+            local svc = Library.Services[entry.Type]
+            if svc then
+                local row = mk("TextButton", {
+                    Parent = body,
+                    Size = UDim2.new(1, 0, 0, 46),
+                    BackgroundColor3 = Theme.Themes.Default.Section,
+                    BorderSizePixel = 0,
+                    Text = "",
+                    AutoButtonColor = false,
+                    LayoutOrder = 2 + i
+                })
+                Theme:Register(row, "BackgroundColor3", "Section")
+                mk("UICorner", { Parent = row, CornerRadius = UDim.new(0, 8) })
+                local rowStroke = mk("UIStroke", { Parent = row, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+                Theme:Register(rowStroke, "Color", "Border")
+
+                local rowStack = mk("Frame", {
+                    Parent = row,
+                    Size = UDim2.new(1, -24, 1, 0),
+                    Position = UDim2.new(0, 12, 0, 0),
+                    BackgroundTransparency = 1
+                })
+                local rowLayout = mk("UIListLayout", {
+                    Parent = rowStack,
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Padding = UDim.new(0, 2),
+                    VerticalAlignment = Enum.VerticalAlignment.Center
+                })
+
+                local rowTitle = mk("TextLabel", {
+                    Parent = rowStack,
+                    Size = UDim2.new(1, 0, 0, 18),
+                    BackgroundTransparency = 1,
+                    Text = entry.Title or svc.Name or "Get Key",
+                    Font = Enum.Font.GothamMedium,
+                    TextSize = 13,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    LayoutOrder = 1
+                })
+                Theme:Register(rowTitle, "TextColor3", "Text")
+
+                local desc = mk("TextLabel", {
+                    Parent = rowStack,
+                    Size = UDim2.new(1, 0, 0, 16),
+                    BackgroundTransparency = 1,
+                    Text = entry.Desc or "Click to copy link",
+                    Font = Enum.Font.GothamMedium,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    LayoutOrder = 2
+                })
+                Theme:Register(desc, "TextColor3", "SubText")
+
+                local rowCopy = nil
+                track(row.MouseEnter:Connect(function()
+                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.2)
+                    tween(rowStroke, {Transparency = 0}, 0.2)
+                end))
+                track(row.MouseLeave:Connect(function()
+                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Section}, 0.2)
+                    tween(rowStroke, {Transparency = 0.5}, 0.2)
+                end))
+                track(row.MouseButton1Down:Connect(function()
+                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Click}, 0.1)
+                end))
+                track(row.MouseButton1Up:Connect(function()
+                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.1)
+                end))
+                track(row.MouseButton1Click:Connect(function()
+                    if not rowCopy then
+                        local made = pcall(function()
+                            rowCopy = svc.New()
+                        end)
+                        if not made or type(rowCopy) ~= "table" or type(rowCopy.Copy) ~= "function" then
+                            rowCopy = nil
+                        end
+                    end
+                    if rowCopy then
+                        local ok, link = pcall(function()
+                            return rowCopy.Copy()
+                        end)
+                        if ok and link then
+                            sayGate("Link copied to clipboard.", "Accent")
+                        else
+                            sayGate("Cant reach that right now.", "SubText")
+                        end
+                    end
+                end))
+            end
+        end
+
+        -- key box
+        local box = mk("TextBox", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 38),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0,
+            Text = "",
+            PlaceholderText = "Paste your key...",
+            TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            ClearTextOnFocus = false,
+            LayoutOrder = 20
+        })
+        Theme:Register(box, "BackgroundColor3", "Section")
+        Theme:Register(box, "TextColor3", "Text")
+        Theme:Register(box, "PlaceholderColor3", "SubText")
+        mk("UICorner", { Parent = box, CornerRadius = UDim.new(0, 8) })
+        local boxStroke = mk("UIStroke", { Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        Theme:Register(boxStroke, "Color", "Border")
+
+        track(box.Focused:Connect(function()
+            tween(boxStroke, {Color = Theme.Themes.Default.Accent, Transparency = 0}, 0.15)
+        end))
+        track(box.FocusLost:Connect(function()
+            tween(boxStroke, {Color = Theme.Themes.Default.Border, Transparency = 0.5}, 0.2)
+        end))
+
+        -- save key row, saveCheck gets read again down in verifyKey so it has to live out here
+        local saveRow = nil
+        local saveCheck = nil
+        if saveKey then
+            saveRow = mk("Frame", {
+                Parent = body,
+                Size = UDim2.new(1, 0, 0, 18),
+                BackgroundTransparency = 1,
+                LayoutOrder = 21
+            })
+            local saveBox = mk("TextButton", {
+                Parent = saveRow,
+                Size = UDim2.new(0, 16, 0, 16),
+                Position = UDim2.new(0, 0, 0.5, -8),
+                BackgroundColor3 = Theme.Themes.Default.Container,
+                Text = "",
+                AutoButtonColor = false
+            })
+            Theme:Register(saveBox, "BackgroundColor3", "Container")
+            mk("UICorner", { Parent = saveBox, CornerRadius = UDim.new(1, 0) })
+            saveCheck = mk("TextLabel", {
+                Parent = saveBox,
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = "âœ“",
+                Font = Enum.Font.GothamBold,
+                TextSize = 11,
+                TextColor3 = Theme.Themes.Default.Background,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                Visible = false
+            })
+            Theme:Register(saveCheck, "TextColor3", "Background")
+
+            local saveLbl = mk("TextLabel", {
+                Parent = saveRow,
+                Size = UDim2.new(1, -24, 1, 0),
+                Position = UDim2.new(0, 24, 0, 0),
+                BackgroundTransparency = 1,
+                Text = "Save my key",
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left
+            })
+            Theme:Register(saveLbl, "TextColor3", "SubText")
+
+            track(saveBox.MouseButton1Click:Connect(function()
+                local on = not saveCheck.Visible
+                saveCheck.Visible = on
+                tween(saveBox, {BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container}, 0.2)
+            end))
+        end
+
+        local checkBtn = mk("TextButton", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 36),
+            BackgroundColor3 = Theme.Themes.Default.Accent,
+            BorderSizePixel = 0,
+            Text = "Check Key",
+            Font = Enum.Font.GothamBold,
+            TextSize = 14,
+            TextColor3 = Theme.Themes.Default.Background,
+            AutoButtonColor = false,
+            LayoutOrder = 22
+        })
+        Theme:Register(checkBtn, "BackgroundColor3", "Accent")
+        Theme:Register(checkBtn, "TextColor3", "Background")
+        mk("UICorner", { Parent = checkBtn, CornerRadius = UDim.new(0, 8) })
+
+        local status = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 18),
+            BackgroundTransparency = 1,
+            Text = "",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 23
+        })
+        Theme:Register(status, "TextColor3", "SubText")
+
+        sayGate = function(text, tone)
+            if not status or not status.Parent then return end
+            status.Text = tostring(text or "")
+            Theme:Register(status, "TextColor3", tone == "Bad" and "SubText" or (tone or "SubText"))
+            status.TextColor3 = tone == "Bad" and Color3.fromRGB(255, 99, 99)
+                or (tone == "Accent" and Theme.Themes.Default.Accent or Theme.Themes.Default.SubText)
+            status.TextTransparency = 1
+            tween(status, {TextTransparency = 0}, 0.2)
+        end
+
+        local function sizeCard()
+            if card and card.Parent then
+                card.Size = UDim2.new(0, 420, 0, bodyLayout.AbsoluteContentSize.Y + 40)
+            end
+        end
+        track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
+        sizeCard()
+
+        local checking = false
+
+        local function verifyKey(key)
+            if checking then return end
+            key = tostring(key or ""):gsub("%s", "")
+            if key == "" then
+                sayGate("Put a key in first.", "Bad")
+                return
+            end
+
+            local def = apiList[1] and Library.Services[apiList[1].Type]
+            if not def then
+                sayGate("No key service registered.", "Bad")
+                return
+            end
+
+            checking = true
+            checkBtn.Text = "Checking..."
+            sayGate("Talking to the key server...", "SubText")
+
+            -- verification can block on http so keep it off the ui thread
+            task.spawn(function()
+                local ok, made = pcall(function()
+                    return def.New()
+                end)
+                if not ok or type(made) ~= "table" or type(made.Verify) ~= "function" then
+                    checking = false
+                    checkBtn.Text = "Check Key"
+                    sayGate("That key service is broken.", "Bad")
+                    return
+                end
+
+                local passed, msg = false, nil
+                local called, res, resMsg = pcall(function()
+                    return made.Verify(key)
+                end)
+                if called then
+                    passed, msg = res, resMsg
+                else
+                    msg = tostring(res)
+                end
+
+                checking = false
+                if checkBtn.Parent then
+                    checkBtn.Text = "Check Key"
+                end
+
+                if passed then
+                    if saveCheck and saveCheck.Visible then
+                        writeKey(key)
+                    end
+                    sayGate("Key good.", "Accent")
+                    task.delay(0.4, function()
+                        closeGate()
+                    end)
+                    notifs:Notify("Access Granted", msg or "Key valid.", 3)
+                else
+                    sayGate(msg or "Invalid key.", "Bad")
+                end
+            end)
+        end
+
+        track(checkBtn.MouseButton1Click:Connect(function()
+            if checking then return end
+            verifyKey(box.Text)
+        end))
+        track(box.FocusLost:Connect(function(enterPressed)
+            if enterPressed then verifyKey(box.Text) end
+        end))
+
+        -- already saved one, fill it in and go
+        local cached = readKey()
+        if cached then
+            box.Text = cached
+            if saveCheck then saveCheck.Visible = true end
+            task.delay(0.3, function()
+                verifyKey(cached)
+            end)
+        end
+
+        tween(overlay, {BackgroundTransparency = 0.45}, 0.3)
+        tween(card, {GroupTransparency = 0}, 0.35, Enum.EasingStyle.Quint)
+    end
+
     -- make the default tabs
     local homeTab = windowObj:CreateTab("Home", 1, BuildHomeTab)
     local serversTab = windowObj:CreateTab("Servers", 9990, BuildServersTab)
@@ -2653,7 +3928,7 @@ function Library:CreateWindow(options)
         end
 
         -- fab back to the left
-        if isMobile and fab then
+        if fab then
             fabStoredPos = UDim2.new(0, 0, 0.5, 0)
             fab.Position = fabStoredPos
         end
@@ -2707,13 +3982,53 @@ function Library:CreateWindow(options)
     uiSec:CreateToggle("Enable Notifications", true, function(val)
         notifs.Enabled = val
     end)
+    uiSec:CreateDivider()
+    uiSec:CreateLabel("Destroy UI", "Tears everything down, re-execute to get it back.")
     uiSec:CreateButton("Destroy UI", function()
-        Library:Unload()
-    end)
+        Library:Confirm("Destroy UI?", "Everything gets torn down. Re-execute the script to get it back.", function()
+            Library:Unload()
+        end)
+    end, "Danger")
+
     local keybindSec = settingsTab:CreateSection("Keybind")
-    keybindSec:CreateButton("Toggle Keybind: RightShift", function()
-        notifs:Notify("Keybind", "Toggle UI with Right Shift.", 3)
+    keybindSec:CreateKeybind("Toggle UI", windowObj.Keybind, function(keyCode)
+        windowObj:SetKeybind(keyCode)
+        notifs:Notify("Keybind", "Now toggling with " .. keyCode.Name .. ".", 3)
     end)
+    keybindSec:CreateLabel("Locked", "Stops anyone closing or dragging the window")
+    keybindSec:CreateToggle("Lock Window", false, function(val)
+        if val then
+            windowObj:Lock()
+        else
+            windowObj:Unlock()
+        end
+    end)
+
+    local cfgSec = settingsTab:CreateSection("Configs")
+    cfgSec:CreateLabel("Configs", "Theme, layout and every toggle in here. Files go to RUI/Configs.")
+    local cfgName = ""
+    cfgSec:CreateInput("Name", "", "MySetup", function(val)
+        cfgName = val
+    end)
+    cfgSec:CreateButton("Save Config", function()
+        Library:SaveConfig(cfgName)
+    end, "Accent")
+    cfgSec:CreateButton("Load Config", function()
+        Library:LoadConfig(cfgName)
+    end)
+    cfgSec:CreateButton("Delete Config", function()
+        Library:Confirm("Delete Config?", "\"" .. tostring(cfgName) .. "\" gets removed for good.", function()
+            Library:DeleteConfig(cfgName)
+        end)
+    end, "Danger")
+
+    local savedConfigs = Library:GetConfigs()
+    if #savedConfigs > 0 then
+        cfgSec:CreateLabel("Quick Load")
+        cfgSec:CreateDropdown("Saved", savedConfigs, savedConfigs[1], function(val)
+            Library:LoadConfig(val)
+        end)
+    end
     
     -- for SetScriptInfo
     function windowObj:SetScriptInfo(text)
@@ -2722,10 +4037,117 @@ function Library:CreateWindow(options)
         end
     end
 
+    function windowObj:SetTitle(newTitle)
+        if titleLbl then
+            titleLbl.Text = newTitle
+        end
+    end
+
+    function windowObj:Toggle()
+        canvasGroup.Visible = not canvasGroup.Visible
+        windowObj.Hidden = not canvasGroup.Visible
+    end
+
+    function windowObj:SelectTab(name)
+        for _, t in ipairs(self.Tabs) do
+            if t.Name == name and t.Select then
+                t.Select()
+                return true
+            end
+        end
+        return false
+    end
+
+    -- configs grab the bits that arent flags. position is saved in pixels then
+    -- turned back into an offset because the canvas is center anchored
+    local function viewport()
+        return (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1920, 1080)
+    end
+
+    function windowObj:CollectConfig()
+        return {
+            Tab = windowObj.CurrentTab and windowObj.CurrentTab.Name or nil,
+            Size = {math.floor(canvasGroup.Size.X.Offset), math.floor(canvasGroup.Size.Y.Offset)},
+            Pos = {math.floor(canvasGroup.AbsolutePosition.X), math.floor(canvasGroup.AbsolutePosition.Y)}
+        }
+    end
+
+    function windowObj:ApplyConfig(data)
+        local vp = viewport()
+
+        if data.Size and type(data.Size) == "table" then
+            local w = tonumber(data.Size[1]) or size.X.Offset
+            local h = tonumber(data.Size[2]) or size.Y.Offset
+            w = math.clamp(w, 400, math.max(400, vp.X - 20))
+            h = math.clamp(h, 260, math.max(260, vp.Y - 20))
+            windowObj.Maximized = false
+            windowObj.Minimized = false
+            tween(canvasGroup, {Size = UDim2.new(0, w, 0, h)}, 0.3)
+            if shadowFrame and shadowFrame.Parent then
+                shadowFrame.Size = UDim2.new(0, w, 0, h)
+            end
+        end
+
+        if data.Pos and type(data.Pos) == "table" then
+            local w = canvasGroup.Size.X.Offset
+            local h = canvasGroup.Size.Y.Offset
+            local ax = tonumber(data.Pos[1]) or (vp.X - w) / 2
+            local ay = tonumber(data.Pos[2]) or (vp.Y - h) / 2
+            ax = math.clamp(ax, 0, math.max(0, vp.X - w))
+            ay = math.clamp(ay, 0, math.max(0, vp.Y - h))
+            local ox = ax - vp.X * canvasGroup.Position.X.Scale + w / 2
+            local oy = ay - vp.Y * canvasGroup.Position.Y.Scale + h / 2
+            canvasGroup.Position = UDim2.new(canvasGroup.Position.X.Scale, math.floor(ox), canvasGroup.Position.Y.Scale, math.floor(oy))
+        end
+
+        if data.Tab then
+            task.defer(function()
+                windowObj:SelectTab(data.Tab)
+            end)
+        end
+    end
+
     -- open home first
     homeTab.Select()
 
+    table.insert(self.Windows, windowObj)
+
+    if options.Config then
+        -- give the tabs a beat to build first so flags land on real elements
+        task.spawn(function()
+            task.wait(0.6)
+            if not self.Unloaded then
+                self:LoadConfig(options.Config)
+            end
+        end)
+    end
+
+    -- gate goes up last so it covers everything, stays til the key checks out
+    if options.KeySystem then
+        if self.Gate then
+            -- someone else already owns the gate, wait on em then pop ours
+            task.spawn(function()
+                while not self.Gate() do task.wait(0.1) end
+                if not self.Unloaded then
+                    buildKeyGate(options.KeySystem)
+                end
+            end)
+        else
+            buildKeyGate(options.KeySystem)
+        end
+    end
+
     return windowObj
+end
+
+-- globals so u can just do RUI:CreateWindow after loading it, and so
+-- keysystem.lua has somewhere to register its service
+-- NOTE: has to sit BEFORE the return, a return has to be the last line of a
+-- block or the whole file is a syntax error
+_G.RUI = Library
+local genv = getgenv and getgenv() or nil
+if genv then
+    genv.RUI = Library
 end
 
 return Library
