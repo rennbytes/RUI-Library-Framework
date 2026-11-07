@@ -1574,12 +1574,9 @@ function Library:CreateWindow(options)
         Visible = true
     })
     
-    -- little floating open btn. phones/tablets always get one, desktop only
-    -- if OpenButton is set (temporary, for testing - remove once happy)
-    if options.OpenButton and not isMobile then
-        Library:Notify("RUI", "Open button is showing on desktop for testing.", 3)
-    end
-    if isMobile or options.OpenButton then
+    -- little floating open btn, touch devices only (phone / tablet).
+    -- desktop users have the keybind, so theres no force-show option
+    if isMobile then
         local fabWidth = FAB_W
         local fabHeight = FAB_H
 
