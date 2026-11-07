@@ -109,6 +109,16 @@ end
 -- default theme, initial value and the reset button both use this
 local DEFAULT_THEME = "Midnight"
 
+-- executor clipboards are a grab bag, try the common ones
+local function copyToClipboard(s)
+    s = tostring(s or "")
+    if setclipboard then setclipboard(s) return true end
+    if toclipboard then toclipboard(s) return true end
+    if syn and syn.set_clipboard then syn.set_clipboard(s) return true end
+    if syn and syn.clipboard and syn.clipboard.set then syn.clipboard.set(s) return true end
+    return false
+end
+
 -- themes, add more if u want
 local Theme = {
     Themes = {
@@ -3607,68 +3617,15 @@ function Library:CreateWindow(options)
             PaddingRight = UDim.new(0, 22)
         })
 
-        -- accent badge with a hand-drawn key icon (bow, stem, two teeth)
-        local badge = mk("Frame", {
-            Parent = body,
-            Size = UDim2.new(0, 56, 0, 56),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            LayoutOrder = 1
-        })
-        local badgeDisc = mk("Frame", {
-            Parent = badge,
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundColor3 = Theme.Themes.Default.Accent,
-            BorderSizePixel = 0
-        })
-        Theme:Register(badgeDisc, "BackgroundColor3", "Accent")
-        mk("UICorner", { Parent = badgeDisc, CornerRadius = UDim.new(1, 0) })
-        addShadow(badgeDisc, 0.45, 10)
-        local keyWhite = Color3.new(1, 1, 1)
-        local bow = mk("Frame", {
-            Parent = badgeDisc,
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(0.5, 0, 0.5, -7),
-            Size = UDim2.new(0, 15, 0, 15),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0
-        })
-        mk("UICorner", { Parent = bow, CornerRadius = UDim.new(1, 0) })
-        mk("UIStroke", { Parent = bow, Thickness = 3, Color = keyWhite })
-        mk("Frame", {
-            Parent = badgeDisc,
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(0.5, 0, 0.5, 6.5),
-            Size = UDim2.new(0, 5, 0, 15),
-            BackgroundColor3 = keyWhite,
-            BorderSizePixel = 0
-        })
-        mk("Frame", {
-            Parent = badgeDisc,
-            AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0.5, 2.5, 0.5, 7),
-            Size = UDim2.new(0, 8, 0, 3.5),
-            BackgroundColor3 = keyWhite,
-            BorderSizePixel = 0
-        })
-        mk("Frame", {
-            Parent = badgeDisc,
-            AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0.5, 2.5, 0.5, 12.5),
-            Size = UDim2.new(0, 6, 0, 3.5),
-            BackgroundColor3 = keyWhite,
-            BorderSizePixel = 0
-        })
-
         local head = mk("TextLabel", {
             Parent = body,
             Size = UDim2.new(1, 0, 0, 26),
             BackgroundTransparency = 1,
             Text = title,
             Font = Enum.Font.GothamBold,
-            TextSize = 19,
+            TextSize = 20,
             TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 2
+            LayoutOrder = 1
         })
         Theme:Register(head, "TextColor3", "Text")
 
@@ -3680,7 +3637,7 @@ function Library:CreateWindow(options)
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 3
+            LayoutOrder = 2
         })
         Theme:Register(note, "TextColor3", "SubText")
 
@@ -3830,15 +3787,31 @@ function Library:CreateWindow(options)
         end))
 
         -- save key row, saveToggleOn gets read again down in verifyKey so it
-        -- has to live out here. proper switch instead of a checkbox
+        -- has to live out here. clean checkbox with a springy check-in
         local saveToggleOn = false
-        local saveTrack, saveKnob = nil, nil
+        local saveBox, saveTick, saveStroke, saveScale = nil, nil, nil, nil
+
         local function setSaveOn(on)
             saveToggleOn = on
-            if saveTrack then
-                saveTrack.BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container
-                saveKnob.Position = on and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-                saveKnob.BackgroundColor3 = on and Color3.new(1, 1, 1) or Theme.Themes.Default.SubText
+            if not saveBox then return end
+            saveBox.BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container
+            saveStroke.Color = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Border
+            saveStroke.Transparency = on and 0 or 0.5
+            if saveScale then
+                saveScale.Scale = 0.6
+                tween(saveScale, {Scale = 1.18}, 0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+                task.delay(0.18, function()
+                    if saveScale then
+                        tween(saveScale, {Scale = 1}, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                    end
+                end)
+            end
+            if saveTick then
+                saveTick.Visible = on
+                if on then
+                    saveTick.TextTransparency = 1
+                    tween(saveTick, {TextTransparency = 0}, 0.22, Enum.EasingStyle.Quad)
+                end
             end
         end
 
@@ -3851,7 +3824,7 @@ function Library:CreateWindow(options)
             })
             local saveLbl = mk("TextLabel", {
                 Parent = saveRow,
-                Size = UDim2.new(1, -50, 1, 0),
+                Size = UDim2.new(1, -30, 1, 0),
                 Position = UDim2.new(0, 0, 0, 0),
                 BackgroundTransparency = 1,
                 Text = "Save my key",
@@ -3861,30 +3834,46 @@ function Library:CreateWindow(options)
             })
             Theme:Register(saveLbl, "TextColor3", "SubText")
 
-            saveTrack = mk("TextButton", {
+            saveBox = mk("TextButton", {
                 Parent = saveRow,
-                Size = UDim2.new(0, 38, 0, 20),
-                Position = UDim2.new(1, -38, 0.5, -10),
+                Size = UDim2.new(0, 18, 0, 18),
+                Position = UDim2.new(1, -18, 0.5, -9),
                 BackgroundColor3 = Theme.Themes.Default.Container,
                 BorderSizePixel = 0,
                 Text = "",
                 AutoButtonColor = false
             })
-            Theme:Register(saveTrack, "BackgroundColor3", "Container")
-            mk("UICorner", { Parent = saveTrack, CornerRadius = UDim.new(1, 0) })
-            local trackStroke = mk("UIStroke", { Parent = saveTrack, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
-            Theme:Register(trackStroke, "Color", "Border")
-            saveKnob = mk("Frame", {
-                Parent = saveTrack,
-                Size = UDim2.new(0, 14, 0, 14),
-                Position = UDim2.new(0, 3, 0.5, -7),
-                BackgroundColor3 = Theme.Themes.Default.SubText,
-                BorderSizePixel = 0
-            })
-            Theme:Register(saveKnob, "BackgroundColor3", "SubText")
-            mk("UICorner", { Parent = saveKnob, CornerRadius = UDim.new(1, 0) })
+            Theme:Register(saveBox, "BackgroundColor3", "Container")
+            mk("UICorner", { Parent = saveBox, CornerRadius = UDim.new(0, 5) })
+            saveStroke = mk("UIStroke", { Parent = saveBox, Thickness = 1.5, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+            Theme:Register(saveStroke, "Color", "Border")
+            saveScale = mk("UIScale", { Parent = saveBox })
 
-            track(saveTrack.MouseButton1Click:Connect(function()
+            saveTick = mk("TextLabel", {
+                Parent = saveBox,
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1,
+                Text = "✓",
+                Font = Enum.Font.GothamBold,
+                TextSize = 13,
+                TextColor3 = Color3.new(1, 1, 1),
+                TextXAlignment = Enum.TextXAlignment.Center,
+                TextYAlignment = Enum.TextYAlignment.Center,
+                TextTransparency = 1,
+                Visible = false
+            })
+
+            track(saveBox.MouseEnter:Connect(function()
+                if not saveToggleOn then
+                    saveStroke.Transparency = 0
+                end
+            end))
+            track(saveBox.MouseLeave:Connect(function()
+                if not saveToggleOn then
+                    saveStroke.Transparency = 0.5
+                end
+            end))
+            track(saveBox.MouseButton1Click:Connect(function()
                 setSaveOn(not saveToggleOn)
             end))
         end
@@ -3921,9 +3910,70 @@ function Library:CreateWindow(options)
             Font = Enum.Font.GothamMedium,
             TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 24
+            LayoutOrder = 23
         })
         Theme:Register(hint, "TextColor3", "SubText")
+
+        -- discord row, click copies the link so nobody has to type an id
+        local DISCORD_LINK = "https://discord.com/users/619377179318288384"
+        local BLURPLE = Color3.fromRGB(88, 101, 242)
+        local BLURPLE_HI = Color3.fromRGB(114, 137, 218)
+
+        local discordRow = mk("TextButton", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 28),
+            BackgroundTransparency = 1,
+            AutoButtonColor = false,
+            LayoutOrder = 24,
+            Text = ""
+        })
+        local dChip = mk("Frame", {
+            Parent = discordRow,
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            Size = UDim2.new(0, 18, 0, 18),
+            BackgroundColor3 = BLURPLE,
+            BorderSizePixel = 0
+        })
+        mk("UICorner", { Parent = dChip, CornerRadius = UDim.new(0, 5) })
+        mk("TextLabel", {
+            Parent = dChip,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "D",
+            Font = Enum.Font.GothamBold,
+            TextSize = 13,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center
+        })
+        local dText = mk("TextLabel", {
+            Parent = discordRow,
+            Size = UDim2.new(1, -26, 1, 0),
+            Position = UDim2.new(0, 26, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "Having issues? Contact me @wtf_renn",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+        Theme:Register(dText, "TextColor3", "SubText")
+        track(discordRow.MouseEnter:Connect(function()
+            dText.TextColor3 = Theme.Themes.Default.Text
+            tween(dChip, {BackgroundColor3 = BLURPLE_HI}, 0.15)
+        end))
+        track(discordRow.MouseLeave:Connect(function()
+            dText.TextColor3 = Theme.Themes.Default.SubText
+            tween(dChip, {BackgroundColor3 = BLURPLE}, 0.15)
+        end))
+        track(discordRow.MouseButton1Click:Connect(function()
+            local copied = copyToClipboard(DISCORD_LINK)
+            if copied then
+                sayGate("Discord link copied to clipboard.", "Accent")
+            else
+                sayGate("@wtf_renn on Discord", "SubText")
+            end
+        end))
 
         local status = mk("TextLabel", {
             Parent = body,
