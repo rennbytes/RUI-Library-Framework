@@ -3920,58 +3920,63 @@ function Library:CreateWindow(options)
             tween(status, {TextTransparency = 0}, 0.2)
         end
 
-        -- save key row, 18px checkbox with a springy check
+        -- save key row. 20px checkbox, always outlined so the empty state is
+        -- readable, and the only motion is a quick fade on the check itself
         local saveToggleOn = false
-        local saveBox, saveTick, saveStroke, saveScale = nil, nil, nil, nil
+        local saveBox, saveTick, saveStroke = nil, nil, nil
 
-        local function paintSaveState()
+        local function paintSaveState(animate)
             if not saveBox then return end
-            if saveToggleOn then
-                Theme:Register(saveBox, "BackgroundColor3", "Accent")
-                Theme:Register(saveStroke, "Color", "Accent")
-                Theme:Register(saveTick, "TextColor3", "Background")
-                saveStroke.Transparency = 0
+            local t = Theme.Themes.Default
+            local bg = saveToggleOn and t.Accent or t.Hover
+            local line = saveToggleOn and t.Accent or t.SubText
+            local lineT = saveToggleOn and 0 or 0.4
+            if animate then
+                tween(saveBox, {BackgroundColor3 = bg}, 0.15)
+                tween(saveStroke, {Color = line, Transparency = lineT}, 0.15)
             else
-                Theme:Register(saveBox, "BackgroundColor3", "Container")
-                Theme:Register(saveStroke, "Color", "Border")
-                saveStroke.Transparency = 0.5
+                saveBox.BackgroundColor3 = bg
+                saveStroke.Color = line
+                saveStroke.Transparency = lineT
+            end
+            if saveTick then
+                saveTick.TextColor3 = t.Background
             end
         end
 
-        local function setSaveOn(on, anim)
+        local function setSaveOn(on, animate)
             local changed = saveToggleOn ~= on
             saveToggleOn = on
-            paintSaveState()
+            paintSaveState(animate)
             if saveTick then
-                saveTick.Visible = on
-                if on and changed then
-                    saveTick.TextTransparency = 1
-                    tween(saveTick, {TextTransparency = 0}, 0.22, Enum.EasingStyle.Quad)
-                elseif on then
-                    saveTick.TextTransparency = 0
-                end
-            end
-            if anim and changed and saveScale then
-                saveScale.Scale = 0.6
-                tween(saveScale, {Scale = 1.18}, 0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-                task.delay(0.18, function()
-                    if saveScale then
-                        tween(saveScale, {Scale = 1}, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                if on then
+                    saveTick.Visible = true
+                    if changed and animate then
+                        saveTick.TextTransparency = 1
+                        tween(saveTick, {TextTransparency = 0}, 0.12, Enum.EasingStyle.Quad)
+                    else
+                        saveTick.TextTransparency = 0
                     end
-                end)
+                else
+                    saveTick.Visible = false
+                    saveTick.TextTransparency = 1
+                end
             end
         end
 
         if saveKey then
-            local saveRow = mk("Frame", {
+            -- a TextButton so the whole row is clickable, not just the 20px box
+            local saveRow = mk("TextButton", {
                 Parent = accessSec,
                 Size = UDim2.new(1, 0, 0, 24),
                 BackgroundTransparency = 1,
+                Text = "",
+                AutoButtonColor = false,
                 LayoutOrder = nextAccess()
             })
             local saveLbl = mk("TextLabel", {
                 Parent = saveRow,
-                Size = UDim2.new(1, -30, 1, 0),
+                Size = UDim2.new(1, -34, 1, 0),
                 BackgroundTransparency = 1,
                 Text = "Save my key",
                 Font = Enum.Font.GothamMedium,
@@ -3982,17 +3987,17 @@ function Library:CreateWindow(options)
 
             saveBox = mk("TextButton", {
                 Parent = saveRow,
-                Size = UDim2.new(0, 18, 0, 18),
-                Position = UDim2.new(1, -18, 0.5, -9),
-                BackgroundColor3 = Theme.Themes.Default.Container,
+                Size = UDim2.new(0, 20, 0, 20),
+                Position = UDim2.new(1, -20, 0.5, -10),
+                BackgroundColor3 = Theme.Themes.Default.Hover,
                 BorderSizePixel = 0,
                 Text = "",
                 AutoButtonColor = false
             })
-            mk("UICorner", { Parent = saveBox, CornerRadius = UDim.new(0, 5) })
-            saveStroke = mk("UIStroke", { Parent = saveBox, Thickness = 1.5, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
-            Theme:Register(saveStroke, "Color", "Border")
-            saveScale = mk("UIScale", { Parent = saveBox })
+            mk("UICorner", { Parent = saveBox, CornerRadius = UDim.new(0, 6) })
+            -- a visible ring on the empty box, that was the whole problem before
+            saveStroke = mk("UIStroke", { Parent = saveBox, Thickness = 1.5, Color = Theme.Themes.Default.SubText, Transparency = 0.4 })
+            saveStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
             saveTick = mk("TextLabel", {
                 Parent = saveBox,
@@ -4000,30 +4005,36 @@ function Library:CreateWindow(options)
                 BackgroundTransparency = 1,
                 Text = "✓",
                 Font = Enum.Font.GothamBold,
-                TextSize = 12,
+                TextSize = 14,
+                TextColor3 = Theme.Themes.Default.Background,
                 TextXAlignment = Enum.TextXAlignment.Center,
                 TextYAlignment = Enum.TextYAlignment.Center,
                 TextTransparency = 1,
                 Visible = false
             })
-            Theme:Register(saveTick, "TextColor3", "Background")
 
-            track(saveBox.MouseEnter:Connect(function()
-                if not saveToggleOn then
-                    saveStroke.Transparency = 0
-                end
+            local function hoverSave(on)
+                if saveToggleOn then return end
+                tween(saveStroke, {Transparency = on and 0.1 or 0.4}, 0.15)
+                local bg = on and Theme.Themes.Default.Container:Lerp(Theme.Themes.Default.Text, 0.08) or Theme.Themes.Default.Hover
+                tween(saveBox, {BackgroundColor3 = bg}, 0.15)
+            end
+
+            track(saveRow.MouseEnter:Connect(function()
+                hoverSave(true)
             end))
-            track(saveBox.MouseLeave:Connect(function()
-                if not saveToggleOn then
-                    saveStroke.Transparency = 0.5
-                end
+            track(saveRow.MouseLeave:Connect(function()
+                hoverSave(false)
+            end))
+            track(saveRow.MouseButton1Click:Connect(function()
+                setSaveOn(not saveToggleOn, true)
             end))
             track(saveBox.MouseButton1Click:Connect(function()
                 setSaveOn(not saveToggleOn, true)
             end))
 
             table.insert(toggleRefresh, function()
-                paintSaveState()
+                paintSaveState(false)
             end)
         end
 
