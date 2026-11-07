@@ -1248,8 +1248,9 @@ function Library:CreateWindow(options)
     -- matches the 90% default on the UI Opacity slider formula (1 - 0.6 * 0.9)
     addShadow(shadowFrame, 0.46, 25)
 
-    -- little pop-in
-    tween(canvasGroup, {GroupTransparency = 0.2, Size = size}, 0.6, Enum.EasingStyle.Quint)
+    -- little pop-in, ends at the 90% default (UserOpacity 0.1) instead of
+    -- leaving the window stuck at the old 80%
+    tween(canvasGroup, {GroupTransparency = 0.1, Size = size}, 0.6, Enum.EasingStyle.Quint)
     task.delay(0.6, function()
         if shadowFrame and shadowFrame.Parent then
             shadowFrame.Visible = true
@@ -1503,7 +1504,10 @@ function Library:CreateWindow(options)
     function windowObj:Lock()
         windowObj.Locked = true
         lockState.on = true
-        canvasGroup.GroupTransparency = 1
+        -- this used to set GroupTransparency = 1, which hid the window and made
+        -- Unlock (and the Settings toggle) unreachable. lock freezes the window,
+        -- it doesnt remove it
+        canvasGroup.GroupTransparency = windowObj.UserOpacity
     end
 
     function windowObj:Unlock()
@@ -1518,6 +1522,7 @@ function Library:CreateWindow(options)
     end))
 
     track(minBtn.MouseButton1Click:Connect(function()
+        if windowObj.Locked then return end
         windowObj.Minimized = not windowObj.Minimized
         if windowObj.Minimized then
             -- remember the size they had so we can put it back, not the default
@@ -1531,7 +1536,7 @@ function Library:CreateWindow(options)
     end))
 
     track(maxBtn.MouseButton1Click:Connect(function()
-        if windowObj.Minimized then return end
+        if windowObj.Locked or windowObj.Minimized then return end
         windowObj.Maximized = not windowObj.Maximized
         if windowObj.Maximized then
             windowObj.PreMaxSize = canvasGroup.Size
