@@ -1560,13 +1560,13 @@ function Library:CreateWindow(options)
         Visible = true
     })
     
-    -- little floating open btn, touch devices only (phone / tablet).
-    -- mouse users have the keybind, so desktop never gets one
+    -- little floating open btn. phones/tablets always get one, desktop only
+    -- if OpenButton is set (temporary, for testing - remove once happy)
     if options.OpenButton and not isMobile then
-        Library:Notify("RUI", "The open button only appears on touch devices.", 3)
+        Library:Notify("RUI", "Open button is showing on desktop for testing.", 3)
     end
-    if isMobile then
-        local fabWidth = 90
+    if isMobile or options.OpenButton then
+        local fabWidth = 78
         local fabHeight = 36
 
         fab = mk("TextButton", {
@@ -1580,7 +1580,8 @@ function Library:CreateWindow(options)
             ClipsDescendants = false,
             BackgroundTransparency = windowObj.UserOpacity
         })
-        mk("UICorner", {Parent = fab, CornerRadius = UDim.new(0, 12)})
+        -- capsule
+        mk("UICorner", {Parent = fab, CornerRadius = UDim.new(1, 0)})
 
         -- outline
         local fabStroke = mk("UIStroke", {
@@ -1596,34 +1597,32 @@ function Library:CreateWindow(options)
 
         addShadow(fab, 0.3, 14)
 
-        -- split label, REN + UI
-        local fabRenLabel = mk("TextLabel", {
+        -- accent dot + wordmark, reads as a logo instead of loose text
+        local fabDot = mk("Frame", {
             Parent = fab,
-            Size = UDim2.new(0.5, 0, 1, 0),
-            Position = UDim2.new(0, 0, 0, 0),
-            BackgroundTransparency = 1,
-            Text = "REN",
-            Font = Enum.Font.GothamBold,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Right,
-            TextYAlignment = Enum.TextYAlignment.Center,
-            TextTransparency = windowObj.UserOpacity
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 13, 0.5, 0),
+            Size = UDim2.new(0, 10, 0, 10),
+            BackgroundColor3 = Theme.Themes.Default.Accent,
+            BorderSizePixel = 0
         })
-        Theme:Register(fabRenLabel, "TextColor3", "Text")
+        Theme:Register(fabDot, "BackgroundColor3", "Accent")
+        mk("UICorner", {Parent = fabDot, CornerRadius = UDim.new(1, 0)})
 
-        local fabUiLabel = mk("TextLabel", {
+        local fabLabel = mk("TextLabel", {
             Parent = fab,
-            Size = UDim2.new(0.5, 0, 1, 0),
-            Position = UDim2.new(0.6, 0, 0, 0),
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 30, 0.5, 0),
+            Size = UDim2.new(0, fabWidth - 30, 1, 0),
             BackgroundTransparency = 1,
-            Text = "UI",
+            Text = "RUI",
             Font = Enum.Font.GothamBold,
-            TextSize = 13,
+            TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
             TextTransparency = windowObj.UserOpacity
         })
-        Theme:Register(fabUiLabel, "TextColor3", "Accent")
+        Theme:Register(fabLabel, "TextColor3", "Text")
 
         -- drag vs tap tracking
         local fabDragging = false
