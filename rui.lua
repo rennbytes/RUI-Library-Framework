@@ -18,6 +18,11 @@ local TeleportService = cloneref(game:GetService("TeleportService"))
 local GuiService = cloneref(game:GetService("GuiService"))
 local Workspace = cloneref(game:GetService("Workspace"))
 local VirtualUser = cloneref(game:GetService("VirtualUser"))
+local ContextActionService = cloneref(game:GetService("ContextActionService"))
+
+-- bound while the key gate is up so movement/jump and the movement keys are sunk
+local GATE_BLOCK_ACTION = "RUI_KeyGate_Block"
+local GATE_BLOCK_KEYS = "RUI_KeyGate_BlockKeys"
 
 -- kill last ui if we re-execute
 if _G.__RUI_Cleanup then
@@ -789,6 +794,12 @@ function Library:Unload()
             end
         end)
     end
+    -- unload can happen while the gate is still up (its exit button), make
+    -- sure the input block does not outlive the ui
+    pcall(function()
+        ContextActionService:UnbindAction(GATE_BLOCK_ACTION)
+        ContextActionService:UnbindAction(GATE_BLOCK_KEYS)
+    end)
     table.clear(cons)
     if notifs.Gui then
         notifs.Gui:Destroy()
@@ -1153,6 +1164,9 @@ end
 function Library:CreateWindow(options)
     options = options or {}
     local title = options.Title or "RUI"
+
+    -- set while the key gate is up so the window keybind/escape stop working
+    local gateActive = false
 
     -- viewport wasnt ready up top so check again lol
     local curViewport = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1920, 1080)
@@ -1799,6 +1813,8 @@ function Library:CreateWindow(options)
 
     track(UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
+        -- the gate owns all input while its up
+        if gateActive then return end
         -- escape closes it unless a keybind element is waiting on a key
         if input.KeyCode == Enum.KeyCode.Escape and not windowObj.Locked and not windowObj.Hidden and not listeningKeybind then
             setHidden(true)
@@ -3548,6 +3564,7 @@ function Library:CreateWindow(options)
     -- until a key goes through, the script sits behind `while not
     -- getgenv().SCRIPT_KEY do task.wait(0.1) end` til then
     local gateOverlay, gateCard = nil, nil
+    local gateOldDisplay = nil
 
     local function closeGate()
         if not gateOverlay then return end
@@ -3563,6 +3580,18 @@ function Library:CreateWindow(options)
         if gateShadowImg then
             tween(gateShadowImg, {ImageTransparency = 1}, 0.25)
         end
+
+        -- hand input back to the game and unlock the window shortcuts
+        gateActive = false
+        pcall(function()
+            ContextActionService:UnbindAction(GATE_BLOCK_ACTION)
+            ContextActionService:UnbindAction(GATE_BLOCK_KEYS)
+        end)
+        if gateOldDisplay ~= nil then
+            gui.DisplayOrder = gateOldDisplay
+            gateOldDisplay = nil
+        end
+
         -- gate is gone, bring the drag bar and fab back if the window wants them
         if fab then fab.Visible = true end
         if not windowObj.Minimized and not windowObj.Hidden then
@@ -4323,6 +4352,42 @@ function Library:CreateWindow(options)
                 verifyKey(cached)
             end)
         end
+
+        -- gate owns the session until a key passes: top layer so nothing else
+        -- is above it, movement/jump sunk, and the window shortcuts suspended
+        gateActive = true
+        gateOldDisplay = gui.DisplayOrder
+        gui.DisplayOrder = 2147483647
+        pcall(function()
+            ContextActionService:BindActionAtPriority(GATE_BLOCK_ACTION, function()
+                return Enum.ContextActionResult.Sink
+            end, false, 9000,
+                Enum.PlayerActions.CharacterForward,
+                Enum.PlayerActions.CharacterBackward,
+                Enum.PlayerActions.CharacterLeft,
+                Enum.PlayerActions.CharacterRight,
+                Enum.PlayerActions.CharacterJump
+            )
+        end)
+        pcall(function()
+            ContextActionService:BindActionAtPriority(GATE_BLOCK_KEYS, function()
+                return Enum.ContextActionResult.Sink
+            end, false, 9000,
+                Enum.KeyCode.W,
+                Enum.KeyCode.A,
+                Enum.KeyCode.S,
+                Enum.KeyCode.D,
+                Enum.KeyCode.Up,
+                Enum.KeyCode.Down,
+                Enum.KeyCode.Left,
+                Enum.KeyCode.Right,
+                Enum.KeyCode.Space,
+                Enum.KeyCode.LeftShift,
+                Enum.KeyCode.RightShift,
+                Enum.KeyCode.LeftControl,
+                Enum.KeyCode.RightControl
+            )
+        end)
 
         -- hide the drag bar and fab while the gate is up, they live above everything
         dragBar.Visible = false
