@@ -514,7 +514,8 @@ function notifs:showNotif(title, desc, duration)
     end))
     track(closeBtn.MouseButton1Down:Connect(function()
         if notifData.dead then return end
-        closeBtn.TextColor3 = Theme.Themes.Default.Click
+        -- Click is a bg color, way too dark to read as text
+        closeBtn.TextColor3 = Theme.Themes.Default.Accent
     end))
     track(closeBtn.MouseButton1Up:Connect(function()
         if notifData.dead then return end
@@ -1473,13 +1474,12 @@ function Library:CreateWindow(options)
     track(minBtn.MouseButton1Click:Connect(function()
         windowObj.Minimized = not windowObj.Minimized
         if windowObj.Minimized then
+            -- remember the size they had so we can put it back, not the default
+            windowObj.PreMinSize = canvasGroup.Size
             tween(canvasGroup, {Size = UDim2.new(0, canvasGroup.Size.X.Offset, 0, 40)}, 0.4, Enum.EasingStyle.Quint)
             dragBar.Visible = false
         else
-            local restoreMax = curIsPhone and UDim2.new(0, 500, 0, 400)
-                                   or (curIsTablet and UDim2.new(0, 600, 0, 400)
-                                   or UDim2.new(0, 800, 0, 600))
-            tween(canvasGroup, {Size = windowObj.Maximized and restoreMax or size}, 0.4, Enum.EasingStyle.Quint)
+            tween(canvasGroup, {Size = windowObj.PreMinSize or size}, 0.4, Enum.EasingStyle.Quint)
             dragBar.Visible = true
         end
     end))
@@ -1488,12 +1488,13 @@ function Library:CreateWindow(options)
         if windowObj.Minimized then return end
         windowObj.Maximized = not windowObj.Maximized
         if windowObj.Maximized then
+            windowObj.PreMaxSize = canvasGroup.Size
             local maxSize = curIsPhone and UDim2.new(0, 500, 0, 400)
                                 or (curIsTablet and UDim2.new(0, 600, 0, 400)
                                 or UDim2.new(0, 800, 0, 600))
             tween(canvasGroup, {Size = maxSize, Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.4, Enum.EasingStyle.Quint)
         else
-            tween(canvasGroup, {Size = size}, 0.4, Enum.EasingStyle.Quint)
+            tween(canvasGroup, {Size = windowObj.PreMaxSize or size}, 0.4, Enum.EasingStyle.Quint)
         end
     end))
     
@@ -1974,6 +1975,10 @@ function Library:CreateWindow(options)
                         if variant == "Accent" then
                             Theme:Register(btn, "BackgroundColor3", "Accent")
                             Theme:Register(btn, "TextColor3", "Background")
+                        elseif variant == "Danger" then
+                            -- danger keeps its hardcoded red, does not follow the theme
+                            -- (mk already set baseCol, just dont overwrite it here)
+                            Theme:Register(btn, "TextColor3", "Text")
                         else
                             Theme:Register(btn, "BackgroundColor3", "Container")
                             Theme:Register(btn, "TextColor3", "Text")
@@ -3510,6 +3515,10 @@ function Library:CreateWindow(options)
         local ov = gateOverlay
         gateOverlay, gateCard = nil, nil
         tween(ov, {BackgroundTransparency = 1}, 0.3)
+        -- gate is gone, bring the drag bar back if the window wants it
+        if not windowObj.Minimized and not windowObj.Hidden then
+            dragBar.Visible = true
+        end
         task.delay(0.3, function()
             if ov.Parent then ov:Destroy() end
         end)
@@ -3890,6 +3899,9 @@ function Library:CreateWindow(options)
                 verifyKey(cached)
             end)
         end
+
+        -- hide the drag bar while the gate is up, it lives above everything
+        dragBar.Visible = false
 
         tween(overlay, {BackgroundTransparency = 0.45}, 0.3)
         tween(card, {GroupTransparency = 0}, 0.35, Enum.EasingStyle.Quint)
