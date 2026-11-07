@@ -1078,9 +1078,16 @@ function Library:Modal(opts)
     end
     makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm)
 
-    -- clicking the dark bit counts as cancel, way less annoying than a forced choice
-    track(overlay.InputBegan:Connect(function(input)
-        if input.Target == overlay then
+    -- clicking the dark bit counts as cancel, way less annoying than a forced
+    -- choice. no more InputObject.Target (that property got removed), sample
+    -- the pointer position against the card's screen rect instead
+    track(UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        if closed then return end
+        local abs = card.AbsolutePosition
+        local sz = card.AbsoluteSize
+        local px, py = input.Position.X, input.Position.Y
+        if px < abs.X or px > abs.X + sz.X or py < abs.Y or py > abs.Y + sz.Y then
             shut()
         end
     end))
