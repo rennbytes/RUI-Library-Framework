@@ -3552,8 +3552,12 @@ function Library:CreateWindow(options)
     local function closeGate()
         if not gateOverlay then return end
         local ov = gateOverlay
+        local cd = gateCard
         gateOverlay, gateCard = nil, nil
         tween(ov, {BackgroundTransparency = 1}, 0.3)
+        if cd then
+            tween(cd, {GroupTransparency = 1}, 0.25)
+        end
         -- gate is gone, bring the drag bar and fab back if the window wants them
         if fab then fab.Visible = true end
         if not windowObj.Minimized and not windowObj.Hidden then
@@ -3567,8 +3571,18 @@ function Library:CreateWindow(options)
     local function buildKeyGate(keyOpts)
         local apiList = keyOpts.API or {}
         local saveKey = keyOpts.SaveKey ~= false
-        -- the api rows talk to this before its defined below so it has to be local first
+        -- sayGate is used by the api rows below, so declare it up here
         local sayGate = nil
+
+        -- only list services we actually have registered
+        local validApi = {}
+        for _, entry in ipairs(apiList) do
+            if Library.Services[entry.Type] then
+                table.insert(validApi, entry)
+            end
+        end
+
+        local GATE_W = 430
 
         local overlay = mk("Frame", {
             Parent = gui,
@@ -3582,10 +3596,12 @@ function Library:CreateWindow(options)
         gateOverlay = overlay
         track(overlay)
 
+        -- windui layout: one clean card, title row, note, input, buttons at
+        -- the bottom with submit pinned to the right
         local card = mk("CanvasGroup", {
             Parent = overlay,
-            Size = UDim2.new(0, 440, 0, 40),
-            Position = UDim2.new(0.5, 0, 0.5, 0),
+            Size = UDim2.new(0, GATE_W, 0, 40),
+            Position = UDim2.new(0.5, 0, 0.5, 10),
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundColor3 = Theme.Themes.Default.Container,
             BorderSizePixel = 0,
@@ -3594,7 +3610,7 @@ function Library:CreateWindow(options)
         })
         gateCard = card
         Theme:Register(card, "BackgroundColor3", "Container")
-        mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 14) })
+        mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 18) })
         local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.4 })
         Theme:Register(cardStroke, "Color", "Border")
 
@@ -3606,176 +3622,86 @@ function Library:CreateWindow(options)
         local bodyLayout = mk("UIListLayout", {
             Parent = body,
             SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 12),
-            HorizontalAlignment = Enum.HorizontalAlignment.Center
+            Padding = UDim.new(0, 14),
+            HorizontalAlignment = Enum.HorizontalAlignment.Left
         })
         mk("UIPadding", {
             Parent = body,
-            PaddingTop = UDim.new(0, 26),
-            PaddingBottom = UDim.new(0, 22),
-            PaddingLeft = UDim.new(0, 22),
-            PaddingRight = UDim.new(0, 22)
+            PaddingTop = UDim.new(0, 18),
+            PaddingBottom = UDim.new(0, 18),
+            PaddingLeft = UDim.new(0, 18),
+            PaddingRight = UDim.new(0, 18)
         })
 
-        local head = mk("TextLabel", {
+        -- header: title left, small KEY SYSTEM tag on the right
+        local headRow = mk("Frame", {
             Parent = body,
             Size = UDim2.new(1, 0, 0, 26),
+            BackgroundTransparency = 1,
+            LayoutOrder = 1
+        })
+        local head = mk("TextLabel", {
+            Parent = headRow,
+            Size = UDim2.new(1, -104, 1, 0),
             BackgroundTransparency = 1,
             Text = title,
             Font = Enum.Font.GothamBold,
             TextSize = 20,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 1
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center
         })
         Theme:Register(head, "TextColor3", "Text")
 
+        local headTag = mk("TextLabel", {
+            Parent = headRow,
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, 0, 0.5, 0),
+            Size = UDim2.new(0, 96, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "KEY SYSTEM",
+            Font = Enum.Font.GothamBold,
+            TextSize = 11,
+            TextTransparency = 0.45,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            TextYAlignment = Enum.TextYAlignment.Center
+        })
+        Theme:Register(headTag, "TextColor3", "SubText")
+
+        -- note, faded and wrapped under the title like windui
         local note = mk("TextLabel", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 18),
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
             BackgroundTransparency = 1,
             Text = keyOpts.Note or "Enter your key to continue.",
             Font = Enum.Font.GothamMedium,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Center,
+            TextSize = 13,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
             LayoutOrder = 2
         })
         Theme:Register(note, "TextColor3", "SubText")
 
-        -- api rows, clicking one copies its link
-        for i, entry in ipairs(apiList) do
-            local svc = Library.Services[entry.Type]
-            if svc then
-                local row = mk("TextButton", {
-                    Parent = body,
-                    Size = UDim2.new(1, 0, 0, 48),
-                    BackgroundColor3 = Theme.Themes.Default.Section,
-                    BorderSizePixel = 0,
-                    Text = "",
-                    AutoButtonColor = false,
-                    LayoutOrder = 3 + i
-                })
-                Theme:Register(row, "BackgroundColor3", "Section")
-                mk("UICorner", { Parent = row, CornerRadius = UDim.new(0, 10) })
-                local rowStroke = mk("UIStroke", { Parent = row, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
-                Theme:Register(rowStroke, "Color", "Border")
-
-                local rowStack = mk("Frame", {
-                    Parent = row,
-                    Size = UDim2.new(1, -88, 1, 0),
-                    Position = UDim2.new(0, 14, 0, 0),
-                    BackgroundTransparency = 1
-                })
-                local rowLayout = mk("UIListLayout", {
-                    Parent = rowStack,
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                    Padding = UDim.new(0, 2),
-                    VerticalAlignment = Enum.VerticalAlignment.Center
-                })
-
-                local rowTitle = mk("TextLabel", {
-                    Parent = rowStack,
-                    Size = UDim2.new(1, 0, 0, 18),
-                    BackgroundTransparency = 1,
-                    Text = entry.Title or svc.Name or "Get Key",
-                    Font = Enum.Font.GothamMedium,
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    LayoutOrder = 1
-                })
-                Theme:Register(rowTitle, "TextColor3", "Text")
-
-                local desc = mk("TextLabel", {
-                    Parent = rowStack,
-                    Size = UDim2.new(1, 0, 0, 16),
-                    BackgroundTransparency = 1,
-                    Text = entry.Desc or "Click to copy link",
-                    Font = Enum.Font.GothamMedium,
-                    TextSize = 12,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    LayoutOrder = 2
-                })
-                Theme:Register(desc, "TextColor3", "SubText")
-
-                -- "COPY" pill at the right edge makes the click affordance obvious
-                local copyPill = mk("Frame", {
-                    Parent = row,
-                    AnchorPoint = Vector2.new(1, 0.5),
-                    Position = UDim2.new(1, -12, 0.5, 0),
-                    Size = UDim2.new(0, 46, 0, 22),
-                    BackgroundColor3 = Theme.Themes.Default.Accent,
-                    BorderSizePixel = 0
-                })
-                Theme:Register(copyPill, "BackgroundColor3", "Accent")
-                mk("UICorner", { Parent = copyPill, CornerRadius = UDim.new(0, 6) })
-                mk("TextLabel", {
-                    Parent = copyPill,
-                    Size = UDim2.new(1, 0, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text = "COPY",
-                    Font = Enum.Font.GothamBold,
-                    TextSize = 11,
-                    TextColor3 = Color3.new(1, 1, 1),
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    TextYAlignment = Enum.TextYAlignment.Center
-                })
-
-                local rowCopy = nil
-                track(row.MouseEnter:Connect(function()
-                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.2)
-                    tween(rowStroke, {Transparency = 0}, 0.2)
-                end))
-                track(row.MouseLeave:Connect(function()
-                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Section}, 0.2)
-                    tween(rowStroke, {Transparency = 0.5}, 0.2)
-                end))
-                track(row.MouseButton1Down:Connect(function()
-                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Click}, 0.1)
-                end))
-                track(row.MouseButton1Up:Connect(function()
-                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.1)
-                end))
-                track(row.MouseButton1Click:Connect(function()
-                    if not rowCopy then
-                        local made = pcall(function()
-                            rowCopy = svc.New()
-                        end)
-                        if not made or type(rowCopy) ~= "table" or type(rowCopy.Copy) ~= "function" then
-                            rowCopy = nil
-                        end
-                    end
-                    if rowCopy then
-                        local ok, link = pcall(function()
-                            return rowCopy.Copy()
-                        end)
-                        if ok and link then
-                            sayGate("Link copied to clipboard.", "Accent")
-                        else
-                            sayGate("Cant reach that right now.", "SubText")
-                        end
-                    end
-                end))
-            end
-        end
-
-        -- key box
+        -- key input
         local box = mk("TextBox", {
             Parent = body,
             Size = UDim2.new(1, 0, 0, 42),
             BackgroundColor3 = Theme.Themes.Default.Section,
             BorderSizePixel = 0,
             Text = "",
-            PlaceholderText = "Paste your key here...",
-            TextSize = 13,
+            PlaceholderText = "Enter Key",
+            Font = Enum.Font.Gotham,
+            TextSize = 14,
             TextXAlignment = Enum.TextXAlignment.Left,
             ClearTextOnFocus = false,
-            LayoutOrder = 20
+            LayoutOrder = 3
         })
         Theme:Register(box, "BackgroundColor3", "Section")
         Theme:Register(box, "TextColor3", "Text")
         Theme:Register(box, "PlaceholderColor3", "SubText")
         mk("UICorner", { Parent = box, CornerRadius = UDim.new(0, 10) })
-        mk("UIPadding", { Parent = box, PaddingLeft = UDim.new(0, 13), PaddingRight = UDim.new(0, 13) })
+        mk("UIPadding", { Parent = box, PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) })
         local boxStroke = mk("UIStroke", { Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(boxStroke, "Color", "Border")
 
@@ -3786,18 +3712,66 @@ function Library:CreateWindow(options)
             tween(boxStroke, {Color = Theme.Themes.Default.Border, Transparency = 0.5}, 0.2)
         end))
 
+        -- status line, only takes up space when there is something to say
+        local status = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1,
+            Text = "",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Visible = false,
+            LayoutOrder = 4
+        })
+        Theme:Register(status, "TextColor3", "SubText")
+
+        sayGate = function(text, tone)
+            if not status or not status.Parent then return end
+            text = tostring(text or "")
+            status.Text = text
+            status.Visible = text ~= ""
+            status.TextColor3 = tone == "Bad" and Color3.fromRGB(255, 99, 99)
+                or (tone == "Accent" and Theme.Themes.Default.Accent or Theme.Themes.Default.SubText)
+            status.TextTransparency = 1
+            tween(status, {TextTransparency = 0}, 0.2)
+        end
+
         -- save key row, saveToggleOn gets read again down in verifyKey so it
         -- has to live out here. clean checkbox with a springy check-in
         local saveToggleOn = false
         local saveBox, saveTick, saveStroke, saveScale = nil, nil, nil, nil
 
-        local function setSaveOn(on)
-            saveToggleOn = on
+        -- registered with the theme so a theme switch repaints the checkbox too
+        local function paintSaveState()
             if not saveBox then return end
-            saveBox.BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container
-            saveStroke.Color = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Border
-            saveStroke.Transparency = on and 0 or 0.5
-            if saveScale then
+            if saveToggleOn then
+                Theme:Register(saveBox, "BackgroundColor3", "Accent")
+                Theme:Register(saveStroke, "Color", "Accent")
+                saveStroke.Transparency = 0
+            else
+                Theme:Register(saveBox, "BackgroundColor3", "Container")
+                Theme:Register(saveStroke, "Color", "Border")
+                saveStroke.Transparency = 0.5
+            end
+        end
+
+        local function setSaveOn(on, anim)
+            local changed = saveToggleOn ~= on
+            saveToggleOn = on
+            paintSaveState()
+            if saveTick then
+                saveTick.Visible = on
+                if on and changed then
+                    saveTick.TextTransparency = 1
+                    tween(saveTick, {TextTransparency = 0}, 0.22, Enum.EasingStyle.Quad)
+                elseif on then
+                    saveTick.TextTransparency = 0
+                end
+            end
+            if anim and changed and saveScale then
                 saveScale.Scale = 0.6
                 tween(saveScale, {Scale = 1.18}, 0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
                 task.delay(0.18, function()
@@ -3806,13 +3780,6 @@ function Library:CreateWindow(options)
                     end
                 end)
             end
-            if saveTick then
-                saveTick.Visible = on
-                if on then
-                    saveTick.TextTransparency = 1
-                    tween(saveTick, {TextTransparency = 0}, 0.22, Enum.EasingStyle.Quad)
-                end
-            end
         end
 
         if saveKey then
@@ -3820,7 +3787,7 @@ function Library:CreateWindow(options)
                 Parent = body,
                 Size = UDim2.new(1, 0, 0, 22),
                 BackgroundTransparency = 1,
-                LayoutOrder = 21
+                LayoutOrder = 5
             })
             local saveLbl = mk("TextLabel", {
                 Parent = saveRow,
@@ -3874,45 +3841,272 @@ function Library:CreateWindow(options)
                 end
             end))
             track(saveBox.MouseButton1Click:Connect(function()
-                setSaveOn(not saveToggleOn)
+                setSaveOn(not saveToggleOn, true)
+            end))
+
+            table.insert(toggleRefresh, function()
+                paintSaveState()
+            end)
+        end
+
+        -- copy the key link for one api service
+        local function copyService(entry)
+            local svc = Library.Services[entry.Type]
+            if not svc then return false end
+            local made, inst = pcall(function()
+                return svc.New()
+            end)
+            if made and type(inst) == "table" and type(inst.Copy) == "function" then
+                local ok, link = pcall(function()
+                    return inst.Copy()
+                end)
+                if ok and link then
+                    sayGate("Key link copied to clipboard.", "Accent")
+                    return true
+                end
+            end
+            sayGate("Cant reach that right now.", "Bad")
+            return false
+        end
+
+        -- bottom row: [Exit] [Get Key] .............. [Submit]
+        local btnRow = mk("Frame", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 42),
+            BackgroundTransparency = 1,
+            LayoutOrder = 6
+        })
+
+        local exitBtn = mk("TextButton", {
+            Parent = btnRow,
+            Size = UDim2.new(0, 64, 1, 0),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0,
+            Text = "Exit",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            AutoButtonColor = false
+        })
+        Theme:Register(exitBtn, "BackgroundColor3", "Section")
+        Theme:Register(exitBtn, "TextColor3", "SubText")
+        mk("UICorner", { Parent = exitBtn, CornerRadius = UDim.new(0, 10) })
+        local exitStroke = mk("UIStroke", { Parent = exitBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        Theme:Register(exitStroke, "Color", "Border")
+
+        track(exitBtn.MouseEnter:Connect(function()
+            tween(exitBtn, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.15)
+            tween(exitBtn, {TextColor3 = Theme.Themes.Default.Text}, 0.15)
+            tween(exitStroke, {Transparency = 0}, 0.15)
+        end))
+        track(exitBtn.MouseLeave:Connect(function()
+            tween(exitBtn, {BackgroundColor3 = Theme.Themes.Default.Section}, 0.15)
+            tween(exitBtn, {TextColor3 = Theme.Themes.Default.SubText}, 0.15)
+            tween(exitStroke, {Transparency = 0.5}, 0.15)
+        end))
+        track(exitBtn.MouseButton1Click:Connect(function()
+            -- closes the whole ui, the loader still waits on its key so
+            -- nothing below the gate runs
+            Library:Unload()
+        end))
+
+        local getBtn, getStroke, getChevron = nil, nil, nil
+        local dropPanel, dropOpen = nil, false
+
+        if #validApi > 0 then
+            getBtn = mk("TextButton", {
+                Parent = btnRow,
+                Size = UDim2.new(0, 104, 1, 0),
+                Position = UDim2.new(0, 72, 0, 0),
+                BackgroundColor3 = Theme.Themes.Default.Section,
+                BorderSizePixel = 0,
+                Text = "Get Key",
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Center,
+                AutoButtonColor = false
+            })
+            Theme:Register(getBtn, "BackgroundColor3", "Section")
+            Theme:Register(getBtn, "TextColor3", "SubText")
+            mk("UICorner", { Parent = getBtn, CornerRadius = UDim.new(0, 10) })
+            getStroke = mk("UIStroke", { Parent = getBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+            Theme:Register(getStroke, "Color", "Border")
+
+            if #validApi > 1 then
+                -- chevron only when there is a list to open
+                getBtn.TextXAlignment = Enum.TextXAlignment.Left
+                mk("UIPadding", { Parent = getBtn, PaddingLeft = UDim.new(0, 13) })
+                getChevron = mk("TextLabel", {
+                    Parent = getBtn,
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, -11, 0.5, 0),
+                    Size = UDim2.new(0, 12, 0, 12),
+                    BackgroundTransparency = 1,
+                    Text = "▼",
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 8,
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    TextYAlignment = Enum.TextYAlignment.Center
+                })
+                Theme:Register(getChevron, "TextColor3", "SubText")
+            end
+
+            track(getBtn.MouseEnter:Connect(function()
+                tween(getBtn, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.15)
+                tween(getBtn, {TextColor3 = Theme.Themes.Default.Text}, 0.15)
+                tween(getStroke, {Transparency = 0}, 0.15)
+            end))
+            track(getBtn.MouseLeave:Connect(function()
+                tween(getBtn, {BackgroundColor3 = Theme.Themes.Default.Section}, 0.15)
+                tween(getBtn, {TextColor3 = Theme.Themes.Default.SubText}, 0.15)
+                tween(getStroke, {Transparency = 0.5}, 0.15)
             end))
         end
 
         local checkBtn = mk("TextButton", {
-            Parent = body,
-            Size = UDim2.new(1, 0, 0, 44),
+            Parent = btnRow,
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, 0, 0, 0),
+            Size = UDim2.new(0, 112, 1, 0),
             BackgroundColor3 = Theme.Themes.Default.Accent,
             BorderSizePixel = 0,
-            Text = "Unlock with Key",
+            Text = "Submit",
             Font = Enum.Font.GothamBold,
-            TextSize = 15,
+            TextSize = 14,
             TextColor3 = Color3.new(1, 1, 1),
-            AutoButtonColor = false,
-            LayoutOrder = 22
+            AutoButtonColor = false
         })
         Theme:Register(checkBtn, "BackgroundColor3", "Accent")
         -- text stays hardcoded white, accent buttons must stay readable on any theme
         mk("UICorner", { Parent = checkBtn, CornerRadius = UDim.new(0, 10) })
-        mk("UIGradient", {
+
+        local arrow = mk("TextLabel", {
             Parent = checkBtn,
-            Rotation = 0,
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.28)),
-                ColorSequenceKeypoint.new(1, Theme.Themes.Default.Accent)
-            })
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -14, 0.5, 0),
+            Size = UDim2.new(0, 14, 0, 16),
+            BackgroundTransparency = 1,
+            Text = "→",
+            Font = Enum.Font.GothamBold,
+            TextSize = 16,
+            TextColor3 = Color3.new(1, 1, 1),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center
         })
 
-        local hint = mk("TextLabel", {
+        track(checkBtn.MouseEnter:Connect(function()
+            tween(checkBtn, {BackgroundColor3 = Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.08)}, 0.15)
+        end))
+        track(checkBtn.MouseLeave:Connect(function()
+            tween(checkBtn, {BackgroundColor3 = Theme.Themes.Default.Accent}, 0.15)
+        end))
+
+        -- api picker, only built when there is more than one service
+        if #validApi > 1 then
+            dropPanel = mk("Frame", {
+                Parent = body,
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                BackgroundColor3 = Theme.Themes.Default.Section,
+                BorderSizePixel = 0,
+                Visible = false,
+                LayoutOrder = 7
+            })
+            Theme:Register(dropPanel, "BackgroundColor3", "Section")
+            mk("UICorner", { Parent = dropPanel, CornerRadius = UDim.new(0, 10) })
+            local dropStroke = mk("UIStroke", { Parent = dropPanel, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+            Theme:Register(dropStroke, "Color", "Border")
+            mk("UIPadding", {
+                Parent = dropPanel,
+                PaddingTop = UDim.new(0, 4),
+                PaddingBottom = UDim.new(0, 4),
+                PaddingLeft = UDim.new(0, 4),
+                PaddingRight = UDim.new(0, 4)
+            })
+            mk("UIListLayout", {
+                Parent = dropPanel,
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Padding = UDim.new(0, 2)
+            })
+
+            for i, entry in ipairs(validApi) do
+                local svc = Library.Services[entry.Type]
+                local row = mk("TextButton", {
+                    Parent = dropPanel,
+                    Size = UDim2.new(1, 0, 0, 38),
+                    BackgroundColor3 = Theme.Themes.Default.Section,
+                    BackgroundTransparency = 1,
+                    BorderSizePixel = 0,
+                    Text = "",
+                    AutoButtonColor = false,
+                    LayoutOrder = i
+                })
+                mk("UICorner", { Parent = row, CornerRadius = UDim.new(0, 7) })
+
+                local rowTitle = mk("TextLabel", {
+                    Parent = row,
+                    Size = UDim2.new(1, -68, 1, 0),
+                    Position = UDim2.new(0, 10, 0, 0),
+                    BackgroundTransparency = 1,
+                    Text = entry.Title or svc.Name or "Service",
+                    Font = Enum.Font.GothamMedium,
+                    TextSize = 13,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd
+                })
+                Theme:Register(rowTitle, "TextColor3", "Text")
+
+                local rowHint = mk("TextLabel", {
+                    Parent = row,
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, -10, 0.5, 0),
+                    Size = UDim2.new(0, 56, 1, 0),
+                    BackgroundTransparency = 1,
+                    Text = "COPY",
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 10,
+                    TextTransparency = 0.25,
+                    TextXAlignment = Enum.TextXAlignment.Right,
+                    TextYAlignment = Enum.TextYAlignment.Center
+                })
+                Theme:Register(rowHint, "TextColor3", "SubText")
+
+                track(row.MouseEnter:Connect(function()
+                    tween(row, {BackgroundColor3 = Theme.Themes.Default.Hover, BackgroundTransparency = 0}, 0.12)
+                end))
+                track(row.MouseLeave:Connect(function()
+                    tween(row, {BackgroundTransparency = 1}, 0.12)
+                end))
+                track(row.MouseButton1Click:Connect(function()
+                    copyService(entry)
+                    if dropPanel then dropPanel.Visible = false end
+                    dropOpen = false
+                    if getChevron then tween(getChevron, {Rotation = 0}, 0.2) end
+                end))
+            end
+
+            track(getBtn.MouseButton1Click:Connect(function()
+                dropOpen = not dropOpen
+                dropPanel.Visible = dropOpen
+                if getChevron then
+                    tween(getChevron, {Rotation = dropOpen and 180 or 0}, 0.2, Enum.EasingStyle.Quint)
+                end
+            end))
+        elseif #validApi == 1 then
+            track(getBtn.MouseButton1Click:Connect(function()
+                copyService(validApi[1])
+            end))
+        end
+
+        -- thin divider before the footer
+        local divider = mk("Frame", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 16),
-            BackgroundTransparency = 1,
-            Text = "Need a key? Tap the Jnkie row to copy the link.",
-            Font = Enum.Font.GothamMedium,
-            TextSize = 11,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 23
+            Size = UDim2.new(1, 0, 0, 1),
+            BackgroundColor3 = Theme.Themes.Default.Border,
+            BackgroundTransparency = 0.5,
+            BorderSizePixel = 0,
+            LayoutOrder = 8
         })
-        Theme:Register(hint, "TextColor3", "SubText")
+        Theme:Register(divider, "BackgroundColor3", "Border")
 
         -- discord row, click copies the link so nobody has to type an id
         local DISCORD_LINK = "https://discord.com/users/619377179318288384"
@@ -3921,10 +4115,10 @@ function Library:CreateWindow(options)
 
         local discordRow = mk("TextButton", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 28),
+            Size = UDim2.new(1, 0, 0, 24),
             BackgroundTransparency = 1,
             AutoButtonColor = false,
-            LayoutOrder = 24,
+            LayoutOrder = 9,
             Text = ""
         })
         local dChip = mk("Frame", {
@@ -3952,10 +4146,11 @@ function Library:CreateWindow(options)
             Size = UDim2.new(1, -26, 1, 0),
             Position = UDim2.new(0, 26, 0, 0),
             BackgroundTransparency = 1,
-            Text = "Having issues? Contact me @wtf_renn",
+            Text = "Having issues? Contact me at Discord @wtf_renn",
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd
         })
         Theme:Register(dText, "TextColor3", "SubText")
         track(discordRow.MouseEnter:Connect(function()
@@ -3975,32 +4170,9 @@ function Library:CreateWindow(options)
             end
         end))
 
-        local status = mk("TextLabel", {
-            Parent = body,
-            Size = UDim2.new(1, 0, 0, 18),
-            BackgroundTransparency = 1,
-            Text = "",
-            Font = Enum.Font.GothamMedium,
-            TextSize = 12,
-            TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Center,
-            LayoutOrder = 25
-        })
-        Theme:Register(status, "TextColor3", "SubText")
-
-        sayGate = function(text, tone)
-            if not status or not status.Parent then return end
-            status.Text = tostring(text or "")
-            Theme:Register(status, "TextColor3", tone == "Bad" and "SubText" or (tone or "SubText"))
-            status.TextColor3 = tone == "Bad" and Color3.fromRGB(255, 99, 99)
-                or (tone == "Accent" and Theme.Themes.Default.Accent or Theme.Themes.Default.SubText)
-            status.TextTransparency = 1
-            tween(status, {TextTransparency = 0}, 0.2)
-        end
-
         local function sizeCard()
             if card and card.Parent then
-                card.Size = UDim2.new(0, 440, 0, bodyLayout.AbsoluteContentSize.Y + 40)
+                card.Size = UDim2.new(0, GATE_W, 0, bodyLayout.AbsoluteContentSize.Y + 36)
             end
         end
         track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
@@ -4016,48 +4188,54 @@ function Library:CreateWindow(options)
                 return
             end
 
-            local def = apiList[1] and Library.Services[apiList[1].Type]
-            if not def then
+            if #validApi == 0 then
                 sayGate("No key service registered.", "Bad")
                 return
             end
 
             checking = true
-            checkBtn.Text = "Unlocking..."
+            checkBtn.Text = "Checking..."
             sayGate("Talking to the key server...", "SubText")
 
-            -- verification can block on http so keep it off the ui thread
+            -- verification can block on http so keep it off the ui thread,
+            -- and try every registered service like windui does
             task.spawn(function()
-                local ok, made = pcall(function()
-                    return def.New()
-                end)
-                if not ok or type(made) ~= "table" or type(made.Verify) ~= "function" then
-                    checking = false
-                    checkBtn.Text = "Unlock with Key"
-                    sayGate("That key service is broken.", "Bad")
-                    return
-                end
-
                 local passed, msg = false, nil
-                local called, res, resMsg = pcall(function()
-                    return made.Verify(key)
-                end)
-                if called then
-                    passed, msg = res, resMsg
-                else
-                    msg = tostring(res)
+                local reached = false
+
+                for _, entry in ipairs(validApi) do
+                    local def = Library.Services[entry.Type]
+                    if def then
+                        local ok, made = pcall(function()
+                            return def.New()
+                        end)
+                        if ok and type(made) == "table" and type(made.Verify) == "function" then
+                            reached = true
+                            local called, res, resMsg = pcall(function()
+                                return made.Verify(key)
+                            end)
+                            if called then
+                                passed, msg = res, resMsg
+                            else
+                                msg = tostring(res)
+                            end
+                            if passed then break end
+                        end
+                    end
                 end
 
                 checking = false
                 if checkBtn.Parent then
-                    checkBtn.Text = "Unlock with Key"
+                    checkBtn.Text = "Submit"
                 end
 
-                if passed then
+                if not reached then
+                    sayGate("That key service is broken.", "Bad")
+                elseif passed then
                     if saveToggleOn then
                         writeKey(key)
                     end
-                    sayGate("Key good.", "Accent")
+                    sayGate("Key accepted.", "Accent")
                     task.delay(0.4, function()
                         closeGate()
                     end)
@@ -4091,7 +4269,7 @@ function Library:CreateWindow(options)
         if fab then fab.Visible = false end
 
         tween(overlay, {BackgroundTransparency = 0.45}, 0.3)
-        tween(card, {GroupTransparency = 0}, 0.35, Enum.EasingStyle.Quint)
+        tween(card, {GroupTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.35, Enum.EasingStyle.Quint)
     end
 
     -- home is pinned to the very top, servers/customize/settings to the very
