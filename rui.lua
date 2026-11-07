@@ -1150,8 +1150,28 @@ function Library:CreateWindow(options)
     -- fab gets made later but the close btn uses it so declare up here
     local fab = nil
     local fabStoredPos = UDim2.new(0, 0, 0.5, 0) -- left middle
+    -- lerp state, kept here so the reset button can re-sync it too
+    local fabTargetPos, fabCurrentPos = fabStoredPos, fabStoredPos
     -- shared with the drag handlers so "Lock Window" can actually stop dragging
     local lockState = { on = false }
+
+    -- FAB position lives in RUI/fab.cfg and survives sessions, clamped so a
+    -- spot saved on another screen size cant strand it off-screen
+    local FAB_POS_FILE = "RUI/fab.cfg"
+    local FAB_W, FAB_H = 78, 36
+    local function loadFabPos()
+        local data = readJson(FAB_POS_FILE)
+        if type(data) ~= "table" then return nil end
+        local xs, xo, ys, yo = tonumber(data.XScale), tonumber(data.XOffset), tonumber(data.YScale), tonumber(data.YOffset)
+        if not (xs and xo and ys and yo) then return nil end
+        local vp = (Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize) or Vector2.new(1920, 1080)
+        local x = math.clamp(xs * vp.X + xo, 0, math.max(0, vp.X - FAB_W))
+        local y = math.clamp(ys * vp.Y + yo, FAB_H / 2, math.max(FAB_H / 2, vp.Y - FAB_H / 2))
+        return UDim2.new(0, math.floor(x), 0, math.floor(y))
+    end
+    local function saveFabPos(pos)
+        writeJson(FAB_POS_FILE, { XScale = pos.X.Scale, XOffset = pos.X.Offset, YScale = pos.Y.Scale, YOffset = pos.Y.Offset })
+    end
 
     local gui = mk("ScreenGui", {
         Name = "RUI",
@@ -1412,7 +1432,8 @@ function Library:CreateWindow(options)
     }
 
     -- one place that hides/shows the whole window, the close button, escape, the
-    -- keybind and :Toggle all go through here so they cant drift apart
+    -- keybind and :Toggle all go through here so they cant drift apart.
+    -- the FAB is NOT touched here, it stays visible no matter what
     local function setHidden(hidden)
         windowObj.Hidden = hidden
         if hidden then
@@ -1420,10 +1441,6 @@ function Library:CreateWindow(options)
             tween(stroke, {Transparency = 1}, 0.3)
             local sh = shadowFrame:FindFirstChild("Shadow")
             if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
-            if fab then
-                fab.Position = fabStoredPos
-                fab.Visible = true
-            end
             dragBar.Visible = false
             task.delay(0.3, function()
                 if windowObj.Hidden then
@@ -1440,9 +1457,6 @@ function Library:CreateWindow(options)
             if sh then tween(sh, {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3) end
             if not windowObj.Minimized then
                 dragBar.Visible = true
-            end
-            if fab then
-                fab.Visible = false
             end
         end
     end
@@ -1566,8 +1580,14 @@ function Library:CreateWindow(options)
         Library:Notify("RUI", "Open button is showing on desktop for testing.", 3)
     end
     if isMobile or options.OpenButton then
-        local fabWidth = 78
-        local fabHeight = 36
+        local fabWidth = FAB_W
+        local fabHeight = FAB_H
+
+        -- resume from wherever they left it last session
+        local savedFab = loadFabPos()
+        if savedFab then
+            fabStoredPos = savedFab
+        end
 
         fab = mk("TextButton", {
             Parent = gui,
@@ -1629,8 +1649,8 @@ function Library:CreateWindow(options)
         local fabDragMoved = false
         local fabStartInputPos = nil
         local fabStartObjPos = nil
-        local fabTargetPos = fabStoredPos
-        local fabCurrentPos = fabStoredPos
+        fabTargetPos = fabStoredPos
+        fabCurrentPos = fabStoredPos
         local dragInput = nil
         local DRAG_THRESHOLD = 5
 
@@ -1657,8 +1677,11 @@ function Library:CreateWindow(options)
                 fabDragMoved = false
                 dragInput = input
                 fabStartInputPos = input.Position
-                fabStartObjPos = fab.Position
-                fabCurrentPos = fab.Position
+                -- snap to wherever the lerp is headed so starting a drag
+                -- mid-animation doesnt pull it backwards
+                fab.Position = fabTargetPos
+                fabStartObjPos = fabTargetPos
+                fabCurrentPos = fabTargetPos
                 -- little press-in
                 tween(fab, {Size = UDim2.new(0, fabWidth - 4, 0, fabHeight - 2)}, 0.08, Enum.EasingStyle.Quad)
             end
@@ -1696,8 +1719,10 @@ function Library:CreateWindow(options)
                     if windowObj.Locked and not windowObj.Hidden then return end
                     setHidden(not windowObj.Hidden)
                 else
-                    -- dragged, save where it ended up
-                    fabStoredPos = fab.Position
+                    -- dragged, save where it rests (the lerp target, not the
+                    -- lagging render position) so sessions resume in place
+                    fabStoredPos = fabTargetPos
+                    saveFabPos(fabStoredPos)
                 end
             end
         end))
@@ -3514,7 +3539,8 @@ function Library:CreateWindow(options)
         local ov = gateOverlay
         gateOverlay, gateCard = nil, nil
         tween(ov, {BackgroundTransparency = 1}, 0.3)
-        -- gate is gone, bring the drag bar back if the window wants it
+        -- gate is gone, bring the drag bar and fab back if the window wants them
+        if fab then fab.Visible = true end
         if not windowObj.Minimized and not windowObj.Hidden then
             dragBar.Visible = true
         end
@@ -3899,8 +3925,9 @@ function Library:CreateWindow(options)
             end)
         end
 
-        -- hide the drag bar while the gate is up, it lives above everything
+        -- hide the drag bar and fab while the gate is up, they live above everything
         dragBar.Visible = false
+        if fab then fab.Visible = false end
 
         tween(overlay, {BackgroundTransparency = 0.45}, 0.3)
         tween(card, {GroupTransparency = 0}, 0.35, Enum.EasingStyle.Quint)
@@ -3945,10 +3972,14 @@ function Library:CreateWindow(options)
             windowObj.Tabs[1].Select()
         end
 
-        -- fab back to the left
+        -- fab back to the left, and that becomes the new saved spot
         if fab then
-            fabStoredPos = UDim2.new(0, 0, 0.5, 0)
-            fab.Position = fabStoredPos
+            local defaultPos = UDim2.new(0, 0, 0.5, 0)
+            fabStoredPos = defaultPos
+            fabTargetPos = defaultPos
+            fabCurrentPos = defaultPos
+            fab.Position = defaultPos
+            saveFabPos(defaultPos)
         end
 
         -- unhide if hidden
