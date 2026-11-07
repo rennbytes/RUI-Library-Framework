@@ -106,6 +106,9 @@ local function httpGet(url)
     return HttpService:GetAsync(url)
 end
 
+-- default theme, initial value and the reset button both use this
+local DEFAULT_THEME = "Midnight"
+
 -- themes, add more if u want
 local Theme = {
     Themes = {
@@ -188,7 +191,7 @@ local Theme = {
             Shadow = Color3.fromRGB(0, 0, 0)
         },
     },
-    CurrentTheme = "Midnight",
+    CurrentTheme = DEFAULT_THEME,
     themed = {}
 }
 Theme.Themes.Default = Theme.Themes[Theme.CurrentTheme]
@@ -251,11 +254,12 @@ end
 local listeningKeybind = false
 
 -- drag windows around by the top bar
-local function drag(topbar, window)
+local function drag(topbar, window, canDrag)
     local token = {}
     local dragging, dragInput, dragStart, startPos
-    
+
     track(topbar.InputBegan:Connect(function(input)
+        if canDrag and not canDrag() then return end
         if activeDrag and activeDrag ~= token then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             activeDrag = token
@@ -282,9 +286,7 @@ local function drag(topbar, window)
     track(UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            tween(window, {
-                Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            }, 0.08, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+            window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end))
 end
@@ -306,6 +308,7 @@ function notifs:Init(parent)
     self.Gui = mk("ScreenGui", {
         Name = "RUI_Notifs",
         Parent = parent,
+        DisplayOrder = 1000,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     })
     ProtectGui(self.Gui)
@@ -721,9 +724,14 @@ end
 
 -- lets people drop in their own presets without editing the table
 function Library:AddTheme(name, colors)
-    if type(name) ~= "string" or type(colors) ~= "table" then return false end
+    if type(name) ~= "string" or #name == 0 then return false end
+    if name == "Default" then return false end -- would clobber the internal alias
+    if type(colors) ~= "table" then return false end
+    for key, val in pairs(colors) do
+        if type(key) ~= "string" or typeof(val) ~= "Color3" then return false end
+    end
     local full = {}
-    local base = Theme.Themes[Theme.CurrentTheme] or Theme.Themes.Midnight
+    local base = Theme.Themes[Theme.CurrentTheme] or Theme.Themes[DEFAULT_THEME]
     for key, val in pairs(base) do
         full[key] = val
     end
@@ -953,6 +961,7 @@ function Library:Modal(opts)
         BackgroundColor3 = Color3.new(0, 0, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
+        Active = true,
         ZIndex = 100
     })
     track(overlay)
@@ -1124,6 +1133,7 @@ _G.__RUI_Cleanup = function() -- cleanup for next exec
 end
 
 function Library:CreateWindow(options)
+    options = options or {}
     local title = options.Title or "RUI"
 
     -- viewport wasnt ready up top so check again lol
@@ -1139,6 +1149,8 @@ function Library:CreateWindow(options)
     -- fab gets made later but the close btn uses it so declare up here
     local fab = nil
     local fabStoredPos = UDim2.new(0, 0, 0.5, 0) -- left middle
+    -- shared with the drag handlers so "Lock Window" can actually stop dragging
+    local lockState = { on = false }
 
     local gui = mk("ScreenGui", {
         Name = "RUI",
@@ -1312,7 +1324,7 @@ function Library:CreateWindow(options)
         end
     end))
 
-    drag(dragBar, canvasGroup)
+    drag(dragBar, canvasGroup, function() return not lockState.on end)
     
     local topbar = mk("TextButton", {
         Parent = canvasGroup,
@@ -1321,7 +1333,7 @@ function Library:CreateWindow(options)
         Text = "",
         AutoButtonColor = false
     })
-    drag(topbar, canvasGroup)
+    drag(topbar, canvasGroup, function() return not lockState.on end)
     
     local trafficContainer = mk("Frame", {
         Parent = topbar,
@@ -1398,6 +1410,42 @@ function Library:CreateWindow(options)
         switching = false
     }
 
+    -- one place that hides/shows the whole window, the close button, escape, the
+    -- keybind and :Toggle all go through here so they cant drift apart
+    local function setHidden(hidden)
+        windowObj.Hidden = hidden
+        if hidden then
+            tween(canvasGroup, {GroupTransparency = 1}, 0.3)
+            tween(stroke, {Transparency = 1}, 0.3)
+            local sh = shadowFrame:FindFirstChild("Shadow")
+            if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
+            if fab then
+                fab.Position = fabStoredPos
+                fab.Visible = true
+            end
+            dragBar.Visible = false
+            task.delay(0.3, function()
+                if windowObj.Hidden then
+                    canvasGroup.Visible = false
+                    shadowFrame.Visible = false
+                end
+            end)
+        else
+            canvasGroup.Visible = true
+            shadowFrame.Visible = true
+            tween(canvasGroup, {GroupTransparency = windowObj.UserOpacity}, 0.3)
+            tween(stroke, {Transparency = 0.5}, 0.3)
+            local sh = shadowFrame:FindFirstChild("Shadow")
+            if sh then tween(sh, {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3) end
+            if not windowObj.Minimized then
+                dragBar.Visible = true
+            end
+            if fab then
+                fab.Visible = false
+            end
+        end
+    end
+
     -- these live up here because the settings tab below wires em up, and a
     -- callback that only runs later still has to see the key exist
 
@@ -1407,31 +1455,19 @@ function Library:CreateWindow(options)
 
     function windowObj:Lock()
         windowObj.Locked = true
+        lockState.on = true
         canvasGroup.GroupTransparency = 1
     end
 
     function windowObj:Unlock()
         windowObj.Locked = false
+        lockState.on = false
         canvasGroup.GroupTransparency = windowObj.UserOpacity
     end
 
     track(closeBtn.MouseButton1Click:Connect(function()
-        windowObj.Hidden = true
-        tween(canvasGroup, {GroupTransparency = 1}, 0.3)
-        tween(stroke, {Transparency = 1}, 0.3)
-        local sh = shadowFrame:FindFirstChild("Shadow")
-        if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
-        if fab then
-            fab.Position = fabStoredPos
-            fab.Visible = true
-        end
-        dragBar.Visible = false
-        task.delay(0.3, function()
-            if windowObj.Hidden then
-                canvasGroup.Visible = false
-                shadowFrame.Visible = false
-            end
-        end)
+        if windowObj.Locked then return end
+        setHidden(true)
     end))
 
     track(minBtn.MouseButton1Click:Connect(function()
@@ -1523,8 +1559,12 @@ function Library:CreateWindow(options)
         Visible = true
     })
     
-    -- little floating open btn, phones always get one, desktop only if they ask
-    if isMobile or options.OpenButton then
+    -- little floating open btn, touch devices only (phone / tablet).
+    -- mouse users have the keybind, so desktop never gets one
+    if options.OpenButton and not isMobile then
+        Library:Notify("RUI", "The open button only appears on touch devices.", 3)
+    end
+    if isMobile then
         local fabWidth = 90
         local fabHeight = 36
 
@@ -1651,39 +1691,10 @@ function Library:CreateWindow(options)
                 fabStartObjPos = nil
                 -- pop back
                 tween(fab, {Size = UDim2.new(0, fabWidth, 0, fabHeight)}, 0.2, Enum.EasingStyle.Back)
-                -- btn is there to OPEN the window so it gets out of the way once its open
-                fab.Visible = windowObj.Hidden
                 if not wasDrag then
-                    -- tapped, toggle ui same as rightshift
-                    if windowObj.Hidden then
-                        windowObj.Hidden = false
-                        canvasGroup.Visible = true
-                        shadowFrame.Visible = true
-                        tween(canvasGroup, {GroupTransparency = windowObj.UserOpacity}, 0.3)
-                        tween(stroke, {Transparency = 0.5}, 0.3)
-                        local shadow = shadowFrame:FindFirstChild("Shadow")
-                        if shadow then
-                            tween(shadow, {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3)
-                        end
-                        if not windowObj.Minimized then
-                            dragBar.Visible = true
-                        end
-                    else
-                        windowObj.Hidden = true
-                        tween(canvasGroup, {GroupTransparency = 1}, 0.3)
-                        tween(stroke, {Transparency = 1}, 0.3)
-                        local shadow = shadowFrame:FindFirstChild("Shadow")
-                        if shadow then
-                            tween(shadow, {ImageTransparency = 1}, 0.3)
-                        end
-                        dragBar.Visible = false
-                        task.delay(0.3, function()
-                            if windowObj.Hidden then
-                                canvasGroup.Visible = false
-                                shadowFrame.Visible = false
-                            end
-                        end)
-                    end
+                    -- tapped, toggle ui same as the keybind (locked = no hiding)
+                    if windowObj.Locked and not windowObj.Hidden then return end
+                    setHidden(not windowObj.Hidden)
                 else
                     -- dragged, save where it ended up
                     fabStoredPos = fab.Position
@@ -1750,56 +1761,12 @@ function Library:CreateWindow(options)
         if processed then return end
         -- escape closes it unless a keybind element is waiting on a key
         if input.KeyCode == Enum.KeyCode.Escape and not windowObj.Locked and not windowObj.Hidden and not listeningKeybind then
-            windowObj.Hidden = true
-            tween(canvasGroup, {GroupTransparency = 1}, 0.3)
-            tween(stroke, {Transparency = 1}, 0.3)
-            local escSh = shadowFrame:FindFirstChild("Shadow")
-            if escSh then tween(escSh, {ImageTransparency = 1}, 0.3) end
-            if fab then
-                fab.Position = fabStoredPos
-                fab.Visible = true
-            end
-            dragBar.Visible = false
-            task.delay(0.3, function()
-                if windowObj.Hidden then
-                    canvasGroup.Visible = false
-                    shadowFrame.Visible = false
-                end
-            end)
+            setHidden(true)
             return
         end
         if input.KeyCode == windowObj.Keybind then
-            windowObj.Hidden = not windowObj.Hidden
-            if windowObj.Hidden then
-                tween(canvasGroup, {GroupTransparency = 1}, 0.3)
-                tween(stroke, {Transparency = 1}, 0.3)
-                local sh = shadowFrame:FindFirstChild("Shadow")
-                if sh then tween(sh, {ImageTransparency = 1}, 0.3) end
-                if fab then
-                    fab.Position = fabStoredPos
-                    fab.Visible = true
-                end
-                dragBar.Visible = false
-                task.delay(0.3, function()
-                    if windowObj.Hidden then
-                        canvasGroup.Visible = false
-                        shadowFrame.Visible = false
-                    end
-                end)
-            else
-                canvasGroup.Visible = true
-                shadowFrame.Visible = true
-                tween(canvasGroup, {GroupTransparency = windowObj.UserOpacity}, 0.3)
-                tween(stroke, {Transparency = 0.5}, 0.3)
-                local sh2 = shadowFrame:FindFirstChild("Shadow")
-                if sh2 then tween(sh2, {ImageTransparency = 0.4 + 0.6 * windowObj.UserOpacity}, 0.3) end
-                if not windowObj.Minimized then
-                    dragBar.Visible = true
-                end
-                if fab then
-                    fab.Visible = false
-                end
-            end
+            if windowObj.Locked and not windowObj.Hidden then return end
+            setHidden(not windowObj.Hidden)
         end
     end))
     
@@ -1983,20 +1950,17 @@ function Library:CreateWindow(options)
 
                     elseif compDef.Type == "Button" then
                         local variant = compDef.Variant or "Default"
-                        local baseCol, hoverCol, clickCol
-                        if variant == "Danger" then
-                            baseCol = DANGER
-                            hoverCol = DANGER:Lerp(Color3.new(0, 0, 0), 0.12)
-                            clickCol = DANGER:Lerp(Color3.new(0, 0, 0), 0.24)
-                        elseif variant == "Accent" then
-                            baseCol = Theme.Themes.Default.Accent
-                            hoverCol = Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.15)
-                            clickCol = Theme.Themes.Default.Accent:Lerp(Color3.new(0, 0, 0), 0.15)
-                        else
-                            baseCol = Theme.Themes.Default.Container
-                            hoverCol = Theme.Themes.Default.Hover
-                            clickCol = Theme.Themes.Default.Click
+                        -- colors get looked up live so hover/click follows theme changes
+                        local function cols()
+                            local t = Theme.Themes.Default
+                            if variant == "Danger" then
+                                return DANGER, DANGER:Lerp(Color3.new(0, 0, 0), 0.12), DANGER:Lerp(Color3.new(0, 0, 0), 0.24)
+                            elseif variant == "Accent" then
+                                return t.Accent, t.Accent:Lerp(Color3.new(1, 1, 1), 0.15), t.Accent:Lerp(Color3.new(0, 0, 0), 0.15)
+                            end
+                            return t.Container, t.Hover, t.Click
                         end
+                        local baseCol = cols()
                         local btn = mk("TextButton", {
                             Parent = secFrame,
                             Size = UDim2.new(1, 0, 0, 32),
@@ -2019,18 +1983,22 @@ function Library:CreateWindow(options)
                         Theme:Register(stroke, "Color", "Border")
 
                         track(btn.MouseEnter:Connect(function()
-                            tween(btn, {BackgroundColor3 = hoverCol}, 0.2)
+                            local _, hover = cols()
+                            tween(btn, {BackgroundColor3 = hover}, 0.2)
                             tween(stroke, {Transparency = 0}, 0.2)
                         end))
                         track(btn.MouseLeave:Connect(function()
-                            tween(btn, {BackgroundColor3 = baseCol}, 0.2)
+                            local base = cols()
+                            tween(btn, {BackgroundColor3 = base}, 0.2)
                             tween(stroke, {Transparency = 0.5}, 0.2)
                         end))
                         track(btn.MouseButton1Down:Connect(function()
-                            tween(btn, {BackgroundColor3 = clickCol}, 0.1)
+                            local _, _, click = cols()
+                            tween(btn, {BackgroundColor3 = click}, 0.1)
                         end))
                         track(btn.MouseButton1Up:Connect(function()
-                            tween(btn, {BackgroundColor3 = hoverCol}, 0.1)
+                            local _, hover = cols()
+                            tween(btn, {BackgroundColor3 = hover}, 0.1)
                         end))
                         track(btn.MouseButton1Click:Connect(function()
                             Library:SafeCallback(compDef.Callback)
@@ -2140,10 +2108,11 @@ function Library:CreateWindow(options)
                              Value = state,
                              Default = compDef.Default,
                               Set = function(self, val)
-                                  state = val
-                                  self.Value = val
+                                  state = val and true or false
+                                  self.Value = state
                                   updateState(true)
                                   Library:SafeCallback(compDef.Callback, state)
+                                  storeFlag(compDef.Flag, state)
                               end
                          }
                          if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
@@ -2172,7 +2141,7 @@ function Library:CreateWindow(options)
                             Size = UDim2.new(0, 50, 0, 20),
                             Position = UDim2.new(1, -50, 0, 0),
                             BackgroundTransparency = 1,
-                            Text = tostring(compDef.Default),
+                            Text = "",
                             Font = Enum.Font.GothamMedium,
                             TextSize = 13,
                             TextXAlignment = Enum.TextXAlignment.Right
@@ -2264,7 +2233,9 @@ function Library:CreateWindow(options)
                         local hover = false
                         local dragInput = nil
                         local value = flagStart(compDef, compDef.Default or compDef.Min)
+                        local lastFired = value
                         tooltipText.Text = tostring(value)
+                        valLbl.Text = tostring(value)
 
                         local function setKnobSize(size)
                             tween(knob, {Size = UDim2.new(0, size, 0, size), Position = UDim2.new(0.5, -size/2, 0.5, -size/2)}, 0.2, Enum.EasingStyle.Back)
@@ -2282,8 +2253,11 @@ function Library:CreateWindow(options)
                             valLbl.Text = tostring(value)
                             tooltipText.Text = tostring(value)
                             setFill(percent)
-                            Library:SafeCallback(compDef.Callback, value)
-                            storeFlag(compDef.Flag, value)
+                            if value ~= lastFired then
+                                lastFired = value
+                                Library:SafeCallback(compDef.Callback, value)
+                                storeFlag(compDef.Flag, value)
+                            end
                         end
 
                         local function startDrag(input)
@@ -2362,15 +2336,19 @@ function Library:CreateWindow(options)
                             Value = value,
                             Default = compDef.Default,
                              Set = function(self, val)
-                                 value = math.clamp(val, compDef.Min, compDef.Max)
+                                 local n = tonumber(val)
+                                 if not n then return end
+                                 value = math.floor(math.clamp(n, compDef.Min, compDef.Max))
+                                 lastFired = value
                                  self.Value = value
                                  valLbl.Text = tostring(value)
                                  tooltipText.Text = tostring(value)
                                  local span = math.max(1, compDef.Max - compDef.Min)
                                  local p = math.clamp((value - compDef.Min) / span, 0, 1)
-                                tween(fill, {Size = UDim2.new(p, 0, 1, 0)}, 0.1)
-                                Library:SafeCallback(compDef.Callback, value)
-                            end
+                                 tween(fill, {Size = UDim2.new(p, 0, 1, 0)}, 0.1)
+                                 Library:SafeCallback(compDef.Callback, value)
+                                 storeFlag(compDef.Flag, value)
+                             end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
                         
@@ -2420,7 +2398,7 @@ function Library:CreateWindow(options)
                             Size = UDim2.new(0, 20, 1, 0),
                             Position = UDim2.new(1, -25, 0, 0),
                             BackgroundTransparency = 1,
-                            Text = "â–¼",
+                            Text = "▼",
                             Font = Enum.Font.Gotham,
                             TextSize = 10
                         })
@@ -2479,7 +2457,7 @@ function Library:CreateWindow(options)
                                 Size = UDim2.new(0, 16, 1, 0),
                                 Position = UDim2.new(1, -18, 0, 0),
                                 BackgroundTransparency = 1,
-                                Text = "âœ“",
+                                Text = "✓",
                                 Font = Enum.Font.GothamBold,
                                 TextSize = 12,
                                 TextXAlignment = Enum.TextXAlignment.Center,
@@ -2545,7 +2523,7 @@ function Library:CreateWindow(options)
                              Set = function(self, val)
                                  dValue = val
                                  self.Value = val
-                                 box.Text = " " .. tostring(val)
+                                 box.Text = " " .. tostring(val or "Select...")
                                  for _, data in ipairs(optionBtns) do
                                      local on = data.Item == val
                                      data.Check.Visible = on
@@ -2553,6 +2531,7 @@ function Library:CreateWindow(options)
                                      Theme:Register(data.Btn, "TextColor3", on and "Text" or "SubText")
                                  end
                                  Library:SafeCallback(compDef.Callback, val)
+                                 storeFlag(compDef.Flag, val)
                              end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
@@ -2615,6 +2594,7 @@ function Library:CreateWindow(options)
                                 self.Value = iValue
                                 inp.Text = iValue
                                 Library:SafeCallback(compDef.Callback, iValue)
+                                storeFlag(compDef.Flag, iValue)
                             end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = inpFlag end
@@ -2702,6 +2682,7 @@ function Library:CreateWindow(options)
                                 listening = false
                                 box.Text = val and val.Name or "None"
                                 Library:SafeCallback(compDef.Callback, val)
+                                storeFlag(compDef.Flag, val)
                             end
                         }
                         if compDef.Flag then savedFlags[compDef.Flag] = kbFlag end
@@ -3102,6 +3083,7 @@ function Library:CreateWindow(options)
             TextWrapped = true,
             ClearTextOnFocus = false,
             MultiLine = true,
+            TextEditable = false,
             PlaceholderText = "Script information will appear here..."
         })
         scriptInfoBox.LayoutOrder = 3
@@ -3129,7 +3111,7 @@ function Library:CreateWindow(options)
     -- servers tab
     local function BuildServersTab(tabObj, container)
             local canvasGroup = mk("CanvasGroup", {
-                Parent = hiddenContainer,
+                Parent = container,
                 Size = UDim2.new(1, 0, 1, 0),
                 BackgroundColor3 = Theme.Themes.Default.Background,
                 GroupTransparency = 0
@@ -3295,7 +3277,8 @@ function Library:CreateWindow(options)
                 local servers = result.data
                 local filtered = {}
                 for _, sv in ipairs(servers) do
-                    if sv.id ~= game.JobId then
+                    -- skip our own server and full servers so people actually land somewhere
+                    if sv.id ~= game.JobId and (sv.playing or 0) < (sv.maxPlayers or 50) then
                         table.insert(filtered, sv.id)
                     end
                 end
@@ -3318,7 +3301,7 @@ function Library:CreateWindow(options)
 
         local sortDropdown = mk("TextButton", {
             Parent = sortRow, Size = UDim2.new(1, -80, 1, 0), Position = UDim2.new(0, 0, 0, 0),
-            Text = "  Sort: Players â†“", Font = Enum.Font.GothamMedium, TextSize = 12,
+            Text = "  Sort: Players ↓", Font = Enum.Font.GothamMedium, TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false
         })
         Theme:Register(sortDropdown, "BackgroundColor3", "Container")
@@ -3354,7 +3337,22 @@ function Library:CreateWindow(options)
             Parent = serverListFrame, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4)
         })
 
+        -- connections from each refresh go here so they can be torn down when the
+        -- old entries get destroyed, otherwise they pile up in the global list
+        local entryConns = {}
+        local function clearEntryConns()
+            for _, c in ipairs(entryConns) do
+                pcall(function() c:Disconnect() end)
+            end
+            table.clear(entryConns)
+        end
+        local function trackEntry(c)
+            table.insert(entryConns, c)
+            return c
+        end
+
         local function RefreshServers()
+            clearEntryConns()
             for _, child in ipairs(serverListFrame:GetChildren()) do
                 if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
             end
@@ -3374,8 +3372,10 @@ function Library:CreateWindow(options)
                 end)
                 if s and result and result.data then
                     servers = result.data
+                elseif type(result) == "table" then
+                    fetchError = tostring(result.message or result.errorType or "Server list API rejected the request")
                 else
-                    fetchError = result or "Unknown error"
+                    fetchError = tostring(result or "Could not reach the server list API")
                 end
 
                 if loadingLbl2 and loadingLbl2.Parent then
@@ -3409,6 +3409,7 @@ function Library:CreateWindow(options)
 
                     local pCount = server.playing or 0
                     local pMax = server.maxPlayers or 50
+                    local isFull = (not isCurrent) and pCount >= pMax
                     local pLbl = mk("TextLabel", {
                         Parent = entry, Size = UDim2.new(0.2, 0, 1, 0), Position = UDim2.new(0.5, 0, 0, 0),
                         BackgroundTransparency = 1, Text = string.format("%d/%d", pCount, pMax),
@@ -3418,12 +3419,16 @@ function Library:CreateWindow(options)
 
                     local joinBtn = mk("TextButton", {
                         Parent = entry, Size = UDim2.new(0, 55, 0, 20), Position = UDim2.new(1, -63, 0.5, -10),
-                        Text = isCurrent and "Current" or "Join",
+                        Text = isCurrent and "Current" or (isFull and "Full" or "Join"),
                         Font = Enum.Font.GothamMedium, TextSize = 11, AutoButtonColor = false
                     })
                     if isCurrent then
                         Theme:Register(joinBtn, "BackgroundColor3", "Accent")
                         Theme:Register(joinBtn, "TextColor3", "Background")
+                    elseif isFull then
+                        -- full servers are visible but not joinable
+                        Theme:Register(joinBtn, "BackgroundColor3", "Section")
+                        Theme:Register(joinBtn, "TextColor3", "SubText")
                     else
                         Theme:Register(joinBtn, "BackgroundColor3", "Container")
                         Theme:Register(joinBtn, "TextColor3", "Text")
@@ -3432,16 +3437,16 @@ function Library:CreateWindow(options)
                     local joinStroke = mk("UIStroke", {Parent = joinBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5})
                     Theme:Register(joinStroke, "Color", "Border")
 
-                    if not isCurrent then
-                        track(joinBtn.MouseEnter:Connect(function()
+                    if not isCurrent and not isFull then
+                        trackEntry(joinBtn.MouseEnter:Connect(function()
                             tween(joinBtn, {BackgroundColor3 = Theme.Themes.Default.Hover}, 0.2)
                             tween(joinStroke, {Transparency = 0}, 0.2)
                         end))
-                        track(joinBtn.MouseLeave:Connect(function()
+                        trackEntry(joinBtn.MouseLeave:Connect(function()
                             tween(joinBtn, {BackgroundColor3 = Theme.Themes.Default.Container}, 0.2)
                             tween(joinStroke, {Transparency = 0.5}, 0.2)
                         end))
-                        track(joinBtn.MouseButton1Click:Connect(function()
+                        trackEntry(joinBtn.MouseButton1Click:Connect(function()
                             if sid ~= "" then
                                 TeleportService:TeleportToPlaceInstance(game.PlaceId, sid, LocalPlayer)
                             end
@@ -3465,10 +3470,10 @@ function Library:CreateWindow(options)
         track(sortDropdown.MouseButton1Click:Connect(function()
             if sortOrder == "Desc" then
                 sortOrder = "Asc"
-                sortDropdown.Text = "  Sort: Players â†‘"
+                sortDropdown.Text = "  Sort: Players ↑"
             else
                 sortOrder = "Desc"
-                sortDropdown.Text = "  Sort: Players â†“"
+                sortDropdown.Text = "  Sort: Players ↓"
             end
             RefreshServers()
         end))
@@ -3522,6 +3527,7 @@ function Library:CreateWindow(options)
             BackgroundColor3 = Color3.new(0, 0, 0),
             BackgroundTransparency = 1,
             BorderSizePixel = 0,
+            Active = true,
             ZIndex = 60
         })
         gateOverlay = overlay
@@ -3730,7 +3736,7 @@ function Library:CreateWindow(options)
                 Parent = saveBox,
                 Size = UDim2.new(1, 0, 1, 0),
                 BackgroundTransparency = 1,
-                Text = "âœ“",
+                Text = "✓",
                 Font = Enum.Font.GothamBold,
                 TextSize = 11,
                 TextColor3 = Theme.Themes.Default.Background,
@@ -3905,8 +3911,8 @@ function Library:CreateWindow(options)
         end
     end)
     displaySec:CreateButton("Reset to Default", function()
-        -- back to midnight
-        Theme:SetTheme("Midnight")
+        -- back to the default theme
+        Theme:SetTheme(DEFAULT_THEME)
 
         -- reset toggles/sliders
         Library:ResetAll()
@@ -4045,8 +4051,8 @@ function Library:CreateWindow(options)
     end
 
     function windowObj:Toggle()
-        canvasGroup.Visible = not canvasGroup.Visible
-        windowObj.Hidden = not canvasGroup.Visible
+        if windowObj.Locked and not windowObj.Hidden then return end
+        setHidden(not windowObj.Hidden)
     end
 
     function windowObj:SelectTab(name)
