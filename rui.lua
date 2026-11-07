@@ -1221,7 +1221,8 @@ function Library:CreateWindow(options)
         BackgroundTransparency = 1,
         Visible = false
     })
-    addShadow(shadowFrame, 0.4, 25)
+    -- matches the 90% default on the UI Opacity slider formula (1 - 0.6 * 0.9)
+    addShadow(shadowFrame, 0.46, 25)
 
     -- little pop-in
     tween(canvasGroup, {GroupTransparency = 0.2, Size = size}, 0.6, Enum.EasingStyle.Quint)
@@ -1428,7 +1429,7 @@ function Library:CreateWindow(options)
         Minimized = false,
         Hidden = false,
         Maximized = false,
-        UserOpacity = 0.2,
+        UserOpacity = 0.1,
         DefaultSize = size,
         DefaultPosition = UDim2.new(0.5, 0, 0.5, 0),
         DefaultMaximized = false,
@@ -3573,7 +3574,7 @@ function Library:CreateWindow(options)
 
         local card = mk("CanvasGroup", {
             Parent = overlay,
-            Size = UDim2.new(0, 420, 0, 40),
+            Size = UDim2.new(0, 440, 0, 40),
             Position = UDim2.new(0.5, 0, 0.5, 0),
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundColor3 = Theme.Themes.Default.Container,
@@ -3583,8 +3584,8 @@ function Library:CreateWindow(options)
         })
         gateCard = card
         Theme:Register(card, "BackgroundColor3", "Container")
-        mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 12) })
-        local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 14) })
+        local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.4 })
         Theme:Register(cardStroke, "Color", "Border")
 
         local body = mk("Frame", {
@@ -3595,25 +3596,79 @@ function Library:CreateWindow(options)
         local bodyLayout = mk("UIListLayout", {
             Parent = body,
             SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 12)
+            Padding = UDim.new(0, 12),
+            HorizontalAlignment = Enum.HorizontalAlignment.Center
         })
         mk("UIPadding", {
             Parent = body,
-            PaddingTop = UDim.new(0, 20),
-            PaddingBottom = UDim.new(0, 20),
-            PaddingLeft = UDim.new(0, 20),
-            PaddingRight = UDim.new(0, 20)
+            PaddingTop = UDim.new(0, 26),
+            PaddingBottom = UDim.new(0, 22),
+            PaddingLeft = UDim.new(0, 22),
+            PaddingRight = UDim.new(0, 22)
+        })
+
+        -- accent badge with a hand-drawn key icon (bow, stem, two teeth)
+        local badge = mk("Frame", {
+            Parent = body,
+            Size = UDim2.new(0, 56, 0, 56),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            LayoutOrder = 1
+        })
+        local badgeDisc = mk("Frame", {
+            Parent = badge,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundColor3 = Theme.Themes.Default.Accent,
+            BorderSizePixel = 0
+        })
+        Theme:Register(badgeDisc, "BackgroundColor3", "Accent")
+        mk("UICorner", { Parent = badgeDisc, CornerRadius = UDim.new(1, 0) })
+        addShadow(badgeDisc, 0.45, 10)
+        local keyWhite = Color3.new(1, 1, 1)
+        local bow = mk("Frame", {
+            Parent = badgeDisc,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, -7),
+            Size = UDim2.new(0, 15, 0, 15),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0
+        })
+        mk("UICorner", { Parent = bow, CornerRadius = UDim.new(1, 0) })
+        mk("UIStroke", { Parent = bow, Thickness = 3, Color = keyWhite })
+        mk("Frame", {
+            Parent = badgeDisc,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 6.5),
+            Size = UDim2.new(0, 5, 0, 15),
+            BackgroundColor3 = keyWhite,
+            BorderSizePixel = 0
+        })
+        mk("Frame", {
+            Parent = badgeDisc,
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0.5, 2.5, 0.5, 7),
+            Size = UDim2.new(0, 8, 0, 3.5),
+            BackgroundColor3 = keyWhite,
+            BorderSizePixel = 0
+        })
+        mk("Frame", {
+            Parent = badgeDisc,
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0.5, 2.5, 0.5, 12.5),
+            Size = UDim2.new(0, 6, 0, 3.5),
+            BackgroundColor3 = keyWhite,
+            BorderSizePixel = 0
         })
 
         local head = mk("TextLabel", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 22),
+            Size = UDim2.new(1, 0, 0, 26),
             BackgroundTransparency = 1,
             Text = title,
             Font = Enum.Font.GothamBold,
-            TextSize = 18,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = 1
+            TextSize = 19,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            LayoutOrder = 2
         })
         Theme:Register(head, "TextColor3", "Text")
 
@@ -3623,9 +3678,9 @@ function Library:CreateWindow(options)
             BackgroundTransparency = 1,
             Text = keyOpts.Note or "Enter your key to continue.",
             Font = Enum.Font.GothamMedium,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = 2
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            LayoutOrder = 3
         })
         Theme:Register(note, "TextColor3", "SubText")
 
@@ -3635,22 +3690,22 @@ function Library:CreateWindow(options)
             if svc then
                 local row = mk("TextButton", {
                     Parent = body,
-                    Size = UDim2.new(1, 0, 0, 46),
+                    Size = UDim2.new(1, 0, 0, 48),
                     BackgroundColor3 = Theme.Themes.Default.Section,
                     BorderSizePixel = 0,
                     Text = "",
                     AutoButtonColor = false,
-                    LayoutOrder = 2 + i
+                    LayoutOrder = 3 + i
                 })
                 Theme:Register(row, "BackgroundColor3", "Section")
-                mk("UICorner", { Parent = row, CornerRadius = UDim.new(0, 8) })
+                mk("UICorner", { Parent = row, CornerRadius = UDim.new(0, 10) })
                 local rowStroke = mk("UIStroke", { Parent = row, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
                 Theme:Register(rowStroke, "Color", "Border")
 
                 local rowStack = mk("Frame", {
                     Parent = row,
-                    Size = UDim2.new(1, -24, 1, 0),
-                    Position = UDim2.new(0, 12, 0, 0),
+                    Size = UDim2.new(1, -88, 1, 0),
+                    Position = UDim2.new(0, 14, 0, 0),
                     BackgroundTransparency = 1
                 })
                 local rowLayout = mk("UIListLayout", {
@@ -3684,6 +3739,29 @@ function Library:CreateWindow(options)
                     LayoutOrder = 2
                 })
                 Theme:Register(desc, "TextColor3", "SubText")
+
+                -- "COPY" pill at the right edge makes the click affordance obvious
+                local copyPill = mk("Frame", {
+                    Parent = row,
+                    AnchorPoint = Vector2.new(1, 0.5),
+                    Position = UDim2.new(1, -12, 0.5, 0),
+                    Size = UDim2.new(0, 46, 0, 22),
+                    BackgroundColor3 = Theme.Themes.Default.Accent,
+                    BorderSizePixel = 0
+                })
+                Theme:Register(copyPill, "BackgroundColor3", "Accent")
+                mk("UICorner", { Parent = copyPill, CornerRadius = UDim.new(0, 6) })
+                mk("TextLabel", {
+                    Parent = copyPill,
+                    Size = UDim2.new(1, 0, 1, 0),
+                    BackgroundTransparency = 1,
+                    Text = "COPY",
+                    Font = Enum.Font.GothamBold,
+                    TextSize = 11,
+                    TextColor3 = Color3.new(1, 1, 1),
+                    TextXAlignment = Enum.TextXAlignment.Center,
+                    TextYAlignment = Enum.TextYAlignment.Center
+                })
 
                 local rowCopy = nil
                 track(row.MouseEnter:Connect(function()
@@ -3726,12 +3804,12 @@ function Library:CreateWindow(options)
         -- key box
         local box = mk("TextBox", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 38),
+            Size = UDim2.new(1, 0, 0, 42),
             BackgroundColor3 = Theme.Themes.Default.Section,
             BorderSizePixel = 0,
             Text = "",
-            PlaceholderText = "Paste your key...",
-            TextSize = 14,
+            PlaceholderText = "Paste your key here...",
+            TextSize = 13,
             TextXAlignment = Enum.TextXAlignment.Left,
             ClearTextOnFocus = false,
             LayoutOrder = 20
@@ -3739,7 +3817,8 @@ function Library:CreateWindow(options)
         Theme:Register(box, "BackgroundColor3", "Section")
         Theme:Register(box, "TextColor3", "Text")
         Theme:Register(box, "PlaceholderColor3", "SubText")
-        mk("UICorner", { Parent = box, CornerRadius = UDim.new(0, 8) })
+        mk("UICorner", { Parent = box, CornerRadius = UDim.new(0, 10) })
+        mk("UIPadding", { Parent = box, PaddingLeft = UDim.new(0, 13), PaddingRight = UDim.new(0, 13) })
         local boxStroke = mk("UIStroke", { Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(boxStroke, "Color", "Border")
 
@@ -3750,43 +3829,30 @@ function Library:CreateWindow(options)
             tween(boxStroke, {Color = Theme.Themes.Default.Border, Transparency = 0.5}, 0.2)
         end))
 
-        -- save key row, saveCheck gets read again down in verifyKey so it has to live out here
-        local saveRow = nil
-        local saveCheck = nil
+        -- save key row, saveToggleOn gets read again down in verifyKey so it
+        -- has to live out here. proper switch instead of a checkbox
+        local saveToggleOn = false
+        local saveTrack, saveKnob = nil, nil
+        local function setSaveOn(on)
+            saveToggleOn = on
+            if saveTrack then
+                saveTrack.BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container
+                saveKnob.Position = on and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+                saveKnob.BackgroundColor3 = on and Color3.new(1, 1, 1) or Theme.Themes.Default.SubText
+            end
+        end
+
         if saveKey then
-            saveRow = mk("Frame", {
+            local saveRow = mk("Frame", {
                 Parent = body,
-                Size = UDim2.new(1, 0, 0, 18),
+                Size = UDim2.new(1, 0, 0, 22),
                 BackgroundTransparency = 1,
                 LayoutOrder = 21
             })
-            local saveBox = mk("TextButton", {
-                Parent = saveRow,
-                Size = UDim2.new(0, 16, 0, 16),
-                Position = UDim2.new(0, 0, 0.5, -8),
-                BackgroundColor3 = Theme.Themes.Default.Container,
-                Text = "",
-                AutoButtonColor = false
-            })
-            Theme:Register(saveBox, "BackgroundColor3", "Container")
-            mk("UICorner", { Parent = saveBox, CornerRadius = UDim.new(1, 0) })
-            saveCheck = mk("TextLabel", {
-                Parent = saveBox,
-                Size = UDim2.new(1, 0, 1, 0),
-                BackgroundTransparency = 1,
-                Text = "✓",
-                Font = Enum.Font.GothamBold,
-                TextSize = 11,
-                TextColor3 = Theme.Themes.Default.Background,
-                TextXAlignment = Enum.TextXAlignment.Center,
-                Visible = false
-            })
-            Theme:Register(saveCheck, "TextColor3", "Background")
-
             local saveLbl = mk("TextLabel", {
                 Parent = saveRow,
-                Size = UDim2.new(1, -24, 1, 0),
-                Position = UDim2.new(0, 24, 0, 0),
+                Size = UDim2.new(1, -50, 1, 0),
+                Position = UDim2.new(0, 0, 0, 0),
                 BackgroundTransparency = 1,
                 Text = "Save my key",
                 Font = Enum.Font.GothamMedium,
@@ -3795,28 +3861,69 @@ function Library:CreateWindow(options)
             })
             Theme:Register(saveLbl, "TextColor3", "SubText")
 
-            track(saveBox.MouseButton1Click:Connect(function()
-                local on = not saveCheck.Visible
-                saveCheck.Visible = on
-                tween(saveBox, {BackgroundColor3 = on and Theme.Themes.Default.Accent or Theme.Themes.Default.Container}, 0.2)
+            saveTrack = mk("TextButton", {
+                Parent = saveRow,
+                Size = UDim2.new(0, 38, 0, 20),
+                Position = UDim2.new(1, -38, 0.5, -10),
+                BackgroundColor3 = Theme.Themes.Default.Container,
+                BorderSizePixel = 0,
+                Text = "",
+                AutoButtonColor = false
+            })
+            Theme:Register(saveTrack, "BackgroundColor3", "Container")
+            mk("UICorner", { Parent = saveTrack, CornerRadius = UDim.new(1, 0) })
+            local trackStroke = mk("UIStroke", { Parent = saveTrack, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+            Theme:Register(trackStroke, "Color", "Border")
+            saveKnob = mk("Frame", {
+                Parent = saveTrack,
+                Size = UDim2.new(0, 14, 0, 14),
+                Position = UDim2.new(0, 3, 0.5, -7),
+                BackgroundColor3 = Theme.Themes.Default.SubText,
+                BorderSizePixel = 0
+            })
+            Theme:Register(saveKnob, "BackgroundColor3", "SubText")
+            mk("UICorner", { Parent = saveKnob, CornerRadius = UDim.new(1, 0) })
+
+            track(saveTrack.MouseButton1Click:Connect(function()
+                setSaveOn(not saveToggleOn)
             end))
         end
 
         local checkBtn = mk("TextButton", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 36),
+            Size = UDim2.new(1, 0, 0, 44),
             BackgroundColor3 = Theme.Themes.Default.Accent,
             BorderSizePixel = 0,
-            Text = "Check Key",
+            Text = "Unlock with Key",
             Font = Enum.Font.GothamBold,
-            TextSize = 14,
-            TextColor3 = Theme.Themes.Default.Background,
+            TextSize = 15,
+            TextColor3 = Color3.new(1, 1, 1),
             AutoButtonColor = false,
             LayoutOrder = 22
         })
         Theme:Register(checkBtn, "BackgroundColor3", "Accent")
-        Theme:Register(checkBtn, "TextColor3", "Background")
-        mk("UICorner", { Parent = checkBtn, CornerRadius = UDim.new(0, 8) })
+        -- text stays hardcoded white, accent buttons must stay readable on any theme
+        mk("UICorner", { Parent = checkBtn, CornerRadius = UDim.new(0, 10) })
+        mk("UIGradient", {
+            Parent = checkBtn,
+            Rotation = 0,
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.28)),
+                ColorSequenceKeypoint.new(1, Theme.Themes.Default.Accent)
+            })
+        })
+
+        local hint = mk("TextLabel", {
+            Parent = body,
+            Size = UDim2.new(1, 0, 0, 16),
+            BackgroundTransparency = 1,
+            Text = "Need a key? Tap the Jnkie row to copy the link.",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 11,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            LayoutOrder = 24
+        })
+        Theme:Register(hint, "TextColor3", "SubText")
 
         local status = mk("TextLabel", {
             Parent = body,
@@ -3826,8 +3933,8 @@ function Library:CreateWindow(options)
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
             TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = 23
+            TextXAlignment = Enum.TextXAlignment.Center,
+            LayoutOrder = 25
         })
         Theme:Register(status, "TextColor3", "SubText")
 
@@ -3843,7 +3950,7 @@ function Library:CreateWindow(options)
 
         local function sizeCard()
             if card and card.Parent then
-                card.Size = UDim2.new(0, 420, 0, bodyLayout.AbsoluteContentSize.Y + 40)
+                card.Size = UDim2.new(0, 440, 0, bodyLayout.AbsoluteContentSize.Y + 40)
             end
         end
         track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
@@ -3866,7 +3973,7 @@ function Library:CreateWindow(options)
             end
 
             checking = true
-            checkBtn.Text = "Checking..."
+            checkBtn.Text = "Unlocking..."
             sayGate("Talking to the key server...", "SubText")
 
             -- verification can block on http so keep it off the ui thread
@@ -3876,7 +3983,7 @@ function Library:CreateWindow(options)
                 end)
                 if not ok or type(made) ~= "table" or type(made.Verify) ~= "function" then
                     checking = false
-                    checkBtn.Text = "Check Key"
+                    checkBtn.Text = "Unlock with Key"
                     sayGate("That key service is broken.", "Bad")
                     return
                 end
@@ -3893,11 +4000,11 @@ function Library:CreateWindow(options)
 
                 checking = false
                 if checkBtn.Parent then
-                    checkBtn.Text = "Check Key"
+                    checkBtn.Text = "Unlock with Key"
                 end
 
                 if passed then
-                    if saveCheck and saveCheck.Visible then
+                    if saveToggleOn then
                         writeKey(key)
                     end
                     sayGate("Key good.", "Accent")
@@ -3923,7 +4030,7 @@ function Library:CreateWindow(options)
         local cached = readKey()
         if cached then
             box.Text = cached
-            if saveCheck then saveCheck.Visible = true end
+            if saveKey then setSaveOn(true) end
             task.delay(0.3, function()
                 verifyKey(cached)
             end)
@@ -3937,14 +4044,15 @@ function Library:CreateWindow(options)
         tween(card, {GroupTransparency = 0}, 0.35, Enum.EasingStyle.Quint)
     end
 
-    -- make the default tabs
+    -- home is pinned to the very top, servers/customize/settings to the very
+    -- bottom, user tabs land in between (nextOrder starts at 10)
     local homeTab = windowObj:CreateTab("Home", 1, BuildHomeTab)
-    local serversTab = windowObj:CreateTab("Servers", 2, BuildServersTab)
+    local serversTab = windowObj:CreateTab("Servers", 100, BuildServersTab)
 
     -- customize tab
-    local customizeTab = windowObj:CreateTab("Customize", 3)
+    local customizeTab = windowObj:CreateTab("Customize", 101)
     local displaySec = customizeTab:CreateSection("Display")
-    displaySec:CreateSlider("UI Opacity", 20, 100, 80, function(val)
+    displaySec:CreateSlider("UI Opacity", 20, 100, 90, function(val)
         windowObj.UserOpacity = 1 - (val / 100)
         canvasGroup.GroupTransparency = windowObj.UserOpacity
         local shadow = shadowFrame:FindFirstChild("Shadow")
@@ -4007,7 +4115,7 @@ function Library:CreateWindow(options)
     end
 
     -- settings tab
-    local settingsTab = windowObj:CreateTab("Settings", 4)
+    local settingsTab = windowObj:CreateTab("Settings", 102)
     local uiSec = settingsTab:CreateSection("Settings")
 
     -- anti afk, clicks when idle so u dont get kicked
