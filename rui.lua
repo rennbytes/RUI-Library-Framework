@@ -973,9 +973,15 @@ local function getModalGui()
 end
 
 -- opts: Title, Content, Confirm, Cancel, Danger, OnConfirm
+-- or opts.Pages = { {Title, Content, Bullets, Image, Footer, OnEnter}, ... }
+-- pages turn the modal into a little wizard, used for onboarding
 function Library:Modal(opts)
     opts = opts or {}
     local parent = getModalGui()
+    local pages = type(opts.Pages) == "table" and opts.Pages or nil
+    local cardW = opts.Width or (pages and 440 or 380)
+    local pageIndex = 1
+    local closed = false
 
     local overlay = mk("Frame", {
         Parent = parent,
@@ -990,7 +996,7 @@ function Library:Modal(opts)
 
     local card = mk("CanvasGroup", {
         Parent = overlay,
-        Size = UDim2.new(0, 380, 0, 40),
+        Size = UDim2.new(0, cardW, 0, 40),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = Theme.Themes.Default.Container,
@@ -1026,26 +1032,41 @@ function Library:Modal(opts)
     })
     Theme:Register(bodyTitle, "TextColor3", "Text")
 
-    if opts.Content then
-        local bodyText = mk("TextLabel", {
+    -- pages get rebuilt into here, normal modals just drop one copy in
+    local pageArea = mk("Frame", {
+        Parent = body,
+        Size = UDim2.new(1, 0, 0, 0),
+        BackgroundTransparency = 1,
+        LayoutOrder = 2
+    })
+    local pageLayout = mk("UIListLayout", {
+        Parent = pageArea,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 10)
+    })
+
+    local dotsRow = nil
+    if pages then
+        dotsRow = mk("Frame", {
             Parent = body,
-            Size = UDim2.new(1, 0, 0, 34),
+            Size = UDim2.new(1, 0, 0, 6),
             BackgroundTransparency = 1,
-            Text = opts.Content,
-            Font = Enum.Font.GothamMedium,
-            TextSize = 13,
-            TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = 2
+            LayoutOrder = 3
         })
-        Theme:Register(bodyText, "TextColor3", "SubText")
+        local dotsLayout = mk("UIListLayout", {
+            Parent = dotsRow,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 6),
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center
+        })
     end
 
     local btnRow = mk("Frame", {
         Parent = body,
         Size = UDim2.new(1, 0, 0, 32),
         BackgroundTransparency = 1,
-        LayoutOrder = 3
+        LayoutOrder = 4
     })
     mk("UIListLayout", {
         Parent = btnRow,
@@ -1055,7 +1076,6 @@ function Library:Modal(opts)
         HorizontalAlignment = Enum.HorizontalAlignment.Right
     })
 
-    local closed = false
     local function shut()
         if closed then return end
         closed = true
@@ -1066,7 +1086,8 @@ function Library:Modal(opts)
         end)
     end
 
-    local function makeBtn(text, order, tint, cb)
+    -- cb fires after the button tween, closeAfter decides whether that kills the modal
+    local function makeBtn(text, order, tint, cb, closeAfter)
         local b = mk("TextButton", {
             Parent = btnRow,
             Size = UDim2.new(0, tint and 96 or 84, 1, 0),
@@ -1087,24 +1108,153 @@ function Library:Modal(opts)
         b.MouseButton1Down:Connect(function() tween(b, {BackgroundColor3 = click}, 0.1) end)
         b.MouseButton1Up:Connect(function() tween(b, {BackgroundColor3 = hover}, 0.1) end)
         b.MouseButton1Click:Connect(function()
-            shut()
+            if closeAfter ~= false then
+                shut()
+            end
             if cb then pcall(cb) end
         end)
         track(b)
         return b
     end
 
-    if opts.Cancel then
-        makeBtn(opts.Cancel, 1, nil, nil)
+    local renderPage, nextBtn, backBtn
+
+    local function addText(text, size, key, order)
+        if not text or text == "" then return end
+        local bounds = TextService:GetTextSize(tostring(text), size, Enum.Font.GothamMedium, Vector2.new(cardW - 40, math.huge))
+        local label = mk("TextLabel", {
+            Parent = pageArea,
+            Size = UDim2.new(1, 0, 0, math.max(size + 4, bounds.Y + 4)),
+            BackgroundTransparency = 1,
+            Text = tostring(text),
+            Font = Enum.Font.GothamMedium,
+            TextSize = size,
+            TextWrapped = true,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = order
+        })
+        Theme:Register(label, "TextColor3", key)
     end
-    makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm)
+
+    renderPage = function()
+        for _, child in ipairs(pageArea:GetChildren()) do
+            if child:IsA("GuiObject") then child:Destroy() end
+        end
+
+        local page
+        if pages then
+            page = pages[pageIndex] or {}
+            bodyTitle.Text = page.Title or opts.Title or "Welcome"
+        else
+            page = opts
+        end
+
+        if page.Image then
+            local img = mk("ImageLabel", {
+                Parent = pageArea,
+                Size = UDim2.new(0, 96, 0, 96),
+                BackgroundTransparency = 1,
+                Image = tostring(page.Image),
+                ScaleType = Enum.ScaleType.Fit,
+                LayoutOrder = 1
+            })
+            mk("UICorner", {Parent = img, CornerRadius = UDim.new(0, 10)})
+        end
+
+        addText(page.Content, page.Image and 14 or 15, "SubText", 2)
+
+        if type(page.Bullets) == "table" then
+            for i, line in ipairs(page.Bullets) do
+                addText("- " .. tostring(line), 13, "SubText", 2 + i)
+            end
+        end
+
+        addText(page.Footer, 12, "Accent", 99)
+
+        if dotsRow then
+            for _, dot in ipairs(dotsRow:GetChildren()) do
+                if dot:IsA("Frame") then dot:Destroy() end
+            end
+            for i = 1, #pages do
+                local dot = mk("Frame", {
+                    Parent = dotsRow,
+                    Size = UDim2.new(0, i == pageIndex and 14 or 6, 0, 6),
+                    BackgroundColor3 = i == pageIndex and Theme.Themes.Default.Accent or Theme.Themes.Default.Border,
+                    BackgroundTransparency = i == pageIndex and 0 or 0.4,
+                    LayoutOrder = i
+                })
+                mk("UICorner", {Parent = dot, CornerRadius = UDim.new(1, 0)})
+                Theme:Register(dot, "BackgroundColor3", i == pageIndex and "Accent" or "Border")
+            end
+        end
+
+        if backBtn then
+            backBtn.Visible = pages ~= nil and pageIndex > 1
+        end
+        if nextBtn and pages then
+            nextBtn.Text = pageIndex == #pages and (opts.Finish or "Finish") or (opts.Next or "Next")
+            nextBtn.Size = UDim2.new(0, pageIndex == #pages and 96 or 84, 1, 0)
+            nextBtn.BackgroundColor3 = pageIndex == #pages and Theme.Themes.Default.Accent or Theme.Themes.Default.Hover
+            Theme:Register(nextBtn, "BackgroundColor3", pageIndex == #pages and "Accent" or "Container")
+            nextBtn.TextColor3 = pageIndex == #pages and Theme.Themes.Default.Background or Theme.Themes.Default.Text
+            Theme:Register(nextBtn, "TextColor3", pageIndex == #pages and "Background" or "Text")
+        end
+
+        if page.OnEnter then
+            pcall(page.OnEnter)
+        end
+        if opts.OnPage then
+            pcall(opts.OnPage, page, pageIndex)
+        end
+    end
+
+    if pages then
+        if opts.Cancel ~= false then
+            makeBtn(opts.Cancel or "Close", 1, nil, nil)
+        end
+        backBtn = makeBtn("Back", 2, nil, function()
+            if pageIndex > 1 then
+                pageIndex = pageIndex - 1
+                renderPage()
+            end
+        end, false)
+
+        nextBtn = makeBtn(opts.Next or "Next", 3, Theme.Themes.Default.Accent, function()
+            if pageIndex < #pages then
+                pageIndex = pageIndex + 1
+                renderPage()
+            else
+                shut()
+                if opts.OnConfirm then pcall(opts.OnConfirm) end
+            end
+        end, false)
+    else
+        if opts.Cancel then
+            makeBtn(opts.Cancel, 1, nil, nil)
+        end
+        makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm)
+    end
+
+    renderPage()
 
     -- clicking the dark bit counts as cancel, way less annoying than a forced
     -- choice. no more InputObject.Target (that property got removed), sample
     -- the pointer position against the card's screen rect instead
     track(UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
         if closed then return end
+        if pages then
+            if input.KeyCode == Enum.KeyCode.Left and pageIndex > 1 then
+                pageIndex = pageIndex - 1
+                renderPage()
+                return
+            end
+            if input.KeyCode == Enum.KeyCode.Right and pageIndex < #pages then
+                pageIndex = pageIndex + 1
+                renderPage()
+                return
+            end
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
         local abs = card.AbsolutePosition
         local sz = card.AbsoluteSize
         local px, py = input.Position.X, input.Position.Y
@@ -1115,10 +1265,15 @@ function Library:Modal(opts)
 
     local function sizeCard()
         if card.Parent then
-            card.Size = UDim2.new(0, 380, 0, bodyLayout.AbsoluteContentSize.Y + 40)
+            local h = bodyLayout.AbsoluteContentSize.Y
+            card.Size = UDim2.new(0, cardW, 0, h + 40)
         end
     end
+    track(pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        pageArea.Size = UDim2.new(1, 0, 0, pageLayout.AbsoluteContentSize.Y)
+    end))
     track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
+    pageArea.Size = UDim2.new(1, 0, 0, pageLayout.AbsoluteContentSize.Y)
     sizeCard()
 
     tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
@@ -1140,6 +1295,18 @@ function Library:Alert(title, content)
         Title = title,
         Content = content,
         Confirm = "Ok"
+    })
+end
+
+-- onboarding is just a modal with pages, this sets the friendly defaults
+function Library:Onboarding(title, pages, onFinish)
+    return self:Modal({
+        Title = title or "Welcome",
+        Pages = pages,
+        Next = "Next",
+        Finish = "Done",
+        Cancel = "Close",
+        OnConfirm = onFinish
     })
 end
 
