@@ -1039,12 +1039,6 @@ function Library:Modal(opts)
         BackgroundTransparency = 1,
         LayoutOrder = 2
     })
-    local pageLayout = mk("UIListLayout", {
-        Parent = pageArea,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 10)
-    })
-
     local dotsRow = nil
     if pages then
         dotsRow = mk("Frame", {
@@ -1119,26 +1113,38 @@ function Library:Modal(opts)
 
     local renderPage, nextBtn, backBtn
 
-    local function addText(text, size, key, order)
-        if not text or text == "" then return end
-        local bounds = TextService:GetTextSize(tostring(text), size, Enum.Font.GothamMedium, Vector2.new(cardW - 40, math.huge))
-        local label = mk("TextLabel", {
-            Parent = pageArea,
-            Size = UDim2.new(1, 0, 0, math.max(size + 4, bounds.Y + 4)),
-            BackgroundTransparency = 1,
-            Text = tostring(text),
-            Font = Enum.Font.GothamMedium,
-            TextSize = size,
-            TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = order
-        })
-        Theme:Register(label, "TextColor3", key)
-    end
-
     renderPage = function()
-        for _, child in ipairs(pageArea:GetChildren()) do
-            if child:IsA("GuiObject") then child:Destroy() end
+        -- build the new content off-parent first, then swap in one shot. the old
+        -- version cleared pageArea first, AbsoluteContentSize hit zero for a
+        -- frame, and the card + dim flashed while they shrank and grew back
+        local staging = mk("Frame", {
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            BackgroundTransparency = 1
+        })
+        local stagedLayout = mk("UIListLayout", {
+            Parent = staging,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, 10)
+        })
+        local stagedH = 0
+        local function addStagedText(text, size, key, order)
+            if not text or text == "" then return end
+            local bounds = TextService:GetTextSize(tostring(text), size, Enum.Font.GothamMedium, Vector2.new(cardW - 40, math.huge))
+            local h = math.max(size + 4, bounds.Y + 4)
+            local label = mk("TextLabel", {
+                Parent = staging,
+                Size = UDim2.new(1, 0, 0, h),
+                BackgroundTransparency = 1,
+                Text = tostring(text),
+                Font = Enum.Font.GothamMedium,
+                TextSize = size,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = order
+            })
+            Theme:Register(label, "TextColor3", key)
+            stagedH = stagedH + h + 10
         end
 
         local page
@@ -1151,7 +1157,7 @@ function Library:Modal(opts)
 
         if page.Image then
             local img = mk("ImageLabel", {
-                Parent = pageArea,
+                Parent = staging,
                 Size = UDim2.new(0, 96, 0, 96),
                 BackgroundTransparency = 1,
                 Image = tostring(page.Image),
@@ -1159,17 +1165,25 @@ function Library:Modal(opts)
                 LayoutOrder = 1
             })
             mk("UICorner", {Parent = img, CornerRadius = UDim.new(0, 10)})
+            stagedH = stagedH + 96 + 10
         end
 
-        addText(page.Content, page.Image and 14 or 15, "SubText", 2)
+        addStagedText(page.Content, page.Image and 14 or 15, "SubText", 2)
 
         if type(page.Bullets) == "table" then
             for i, line in ipairs(page.Bullets) do
-                addText("- " .. tostring(line), 13, "SubText", 2 + i)
+                addStagedText("- " .. tostring(line), 13, "SubText", 2 + i)
             end
         end
 
-        addText(page.Footer, 12, "Accent", 99)
+        addStagedText(page.Footer, 12, "Accent", 99)
+
+        -- swap parents, old children go only after the new ones are in place
+        for _, child in ipairs(pageArea:GetChildren()) do
+            if child:IsA("GuiObject") then child:Destroy() end
+        end
+        pageArea.Size = UDim2.new(1, 0, 0, math.max(0, stagedH - 10))
+        staging.Parent = pageArea
 
         if dotsRow then
             for _, dot in ipairs(dotsRow:GetChildren()) do
@@ -1188,8 +1202,12 @@ function Library:Modal(opts)
             end
         end
 
-        if backBtn then
-            backBtn.Visible = pages ~= nil and pageIndex > 1
+        if backBtn and pages then
+            -- on page one it stays but reads as disabled, no jump in the button row
+            local canBack = pageIndex > 1
+            backBtn.Active = canBack
+            backBtn.TextTransparency = canBack and 0 or 0.5
+            backBtn.BackgroundTransparency = canBack and 0 or 0.6
         end
         if nextBtn and pages then
             nextBtn.Text = pageIndex == #pages and (opts.Finish or "Finish") or (opts.Next or "Next")
@@ -1269,11 +1287,7 @@ function Library:Modal(opts)
             card.Size = UDim2.new(0, cardW, 0, h + 40)
         end
     end
-    track(pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        pageArea.Size = UDim2.new(1, 0, 0, pageLayout.AbsoluteContentSize.Y)
-    end))
     track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
-    pageArea.Size = UDim2.new(1, 0, 0, pageLayout.AbsoluteContentSize.Y)
     sizeCard()
 
     tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
