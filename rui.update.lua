@@ -2671,23 +2671,36 @@ function Library:CreateWindow(options)
         Theme:Register(tabLabel, "TextColor3", "SubText")
         mk("UICorner", {Parent = tabBtn, CornerRadius = UDim.new(0, 6)})
 
-        local activeIndicator = mk("Frame", {
-            Parent = tabBtn,
-            Size = UDim2.new(0, 3, 0, 0),
-            Position = UDim2.new(0, -10, 0.5, 0),
-            AnchorPoint = Vector2.new(0, 0.5),
-            BackgroundTransparency = 0
-        })
-        Theme:Register(activeIndicator, "BackgroundColor3", "Accent")
-        mk("UICorner", {Parent = activeIndicator, CornerRadius = UDim.new(1, 0)})
-        addShadow(activeIndicator, 0.6, 6)
-        
+        -- active rail: a tight accent capsule with a soft glow behind it, sitting
+    -- just outside the tab edge instead of flat against the text
+    local activeGlow = mk("Frame", {
+        Parent = tabBtn,
+        Size = UDim2.new(0, 8, 0, 0),
+        Position = UDim2.new(0, -9, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundTransparency = 1
+    })
+    Theme:Register(activeGlow, "BackgroundColor3", "Accent")
+    mk("UICorner", {Parent = activeGlow, CornerRadius = UDim.new(1, 0)})
+
+    local activeIndicator = mk("Frame", {
+        Parent = tabBtn,
+        Size = UDim2.new(0, 3, 0, 0),
+        Position = UDim2.new(0, -9, 0.5, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundTransparency = 0
+    })
+    Theme:Register(activeIndicator, "BackgroundColor3", "Accent")
+    mk("UICorner", {Parent = activeIndicator, CornerRadius = UDim.new(1, 0)})
+    addShadow(activeIndicator, 0.6, 6)
+
         local tabObj = {
             Name = name,
             Button = tabBtn,
             Label = tabLabel,
             Icon = tabIcon,
             Indicator = activeIndicator,
+            Glow = activeGlow,
             SectionDefs = {},
             ContentRoot = nil,
             ContentLayout = nil,
@@ -3724,6 +3737,9 @@ function Library:CreateWindow(options)
                 tween(oldTab.Button, {BackgroundTransparency = 1}, 0.2)
                 local oldIndicatorTarget = UDim2.new(0, 3, 0, 0)
                 tween(oldTab.Indicator, {Size = oldIndicatorTarget}, 0.2)
+                if oldTab.Glow then
+                    tween(oldTab.Glow, {Size = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1}, 0.2)
+                end
             end
 
             windowObj.CurrentTab = tabObj
@@ -3759,8 +3775,11 @@ function Library:CreateWindow(options)
             end
             Theme:Register(tabBtn, "BackgroundColor3", "Hover")
             tween(tabBtn, {BackgroundTransparency = 0}, 0.2)
-            local activeIndicatorTarget = UDim2.new(0, 3, 0, 18)
-            tween(activeIndicator, {Size = activeIndicatorTarget}, 0.2, Enum.EasingStyle.Back)
+            local activeIndicatorTarget = UDim2.new(0, 3, 0, 22)
+            tween(activeIndicator, {Size = activeIndicatorTarget}, 0.28, Enum.EasingStyle.Back)
+            if activeGlow then
+                tween(activeGlow, {Size = UDim2.new(0, 8, 0, 28), BackgroundTransparency = 0.75}, 0.28, Enum.EasingStyle.Quint)
+            end
 
             task.delay(0.2, function()
                 windowObj.switching = false
