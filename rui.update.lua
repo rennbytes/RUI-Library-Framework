@@ -2620,27 +2620,56 @@ function Library:CreateWindow(options)
             Parent = tabList,
             Size = UDim2.new(1, -20, 0, 32),
             BackgroundTransparency = 1,
-            Text = iconName and (" " .. name) or name,
-            Font = Enum.Font.GothamMedium,
-            TextSize = 13,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            LayoutOrder = layoutOrder or windowObj.nextOrder,
-            AutoButtonColor = false
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = layoutOrder or windowObj.nextOrder
         })
         if not layoutOrder then
             windowObj.nextOrder = windowObj.nextOrder + 1
         end
-        mk("UIPadding", {Parent = tabBtn, PaddingLeft = UDim.new(0, iconName and 38 or 15)})
+
+        -- icon and label are real children so they can be laid out properly.
+        -- UIPadding never affected the button's own Text, which is why the
+        -- old version drew glyphs on top of the first letter
+        local row = mk("Frame", {
+            Parent = tabBtn,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1
+        })
+        mk("UIListLayout", {
+            Parent = row,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            FillDirection = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+            Padding = UDim.new(0, 9)
+        })
+        mk("UIPadding", {
+            Parent = row,
+            PaddingLeft = UDim.new(0, 14),
+            PaddingRight = UDim.new(0, 8)
+        })
+
+        local tabIcon = nil
         if iconName then
-            mkIcon(iconName, tabBtn, 14, "SubText", {
-                AnchorPoint = Vector2.new(0, 0.5),
-                Position = UDim2.new(0, 12, 0.5, 0),
+            tabIcon = mkIcon(iconName, row, 14, "SubText", {
+                LayoutOrder = 1,
                 ImageTransparency = 0.1
             })
         end
+        local tabLabel = mk("TextLabel", {
+            Parent = row,
+            Size = UDim2.new(1, tabIcon and -23 or 0, 1, 0),
+            BackgroundTransparency = 1,
+            Text = name,
+            Font = Enum.Font.GothamMedium,
+            TextSize = 13,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            LayoutOrder = 2
+        })
+        Theme:Register(tabLabel, "TextColor3", "SubText")
         mk("UICorner", {Parent = tabBtn, CornerRadius = UDim.new(0, 6)})
-        Theme:Register(tabBtn, "TextColor3", "SubText")
 
         local activeIndicator = mk("Frame", {
             Parent = tabBtn,
@@ -2656,6 +2685,8 @@ function Library:CreateWindow(options)
         local tabObj = {
             Name = name,
             Button = tabBtn,
+            Label = tabLabel,
+            Icon = tabIcon,
             Indicator = activeIndicator,
             SectionDefs = {},
             ContentRoot = nil,
@@ -3686,7 +3717,10 @@ function Library:CreateWindow(options)
             oldTab.ContentRoot.Visible = false
         end
     end)
-                Theme:Register(oldTab.Button, "TextColor3", "SubText")
+                Theme:Register(oldTab.Label, "TextColor3", "SubText")
+                if oldTab.Icon then
+                    Theme:Register(oldTab.Icon, "ImageColor3", "SubText")
+                end
                 tween(oldTab.Button, {BackgroundTransparency = 1}, 0.2)
                 local oldIndicatorTarget = UDim2.new(0, 3, 0, 0)
                 tween(oldTab.Indicator, {Size = oldIndicatorTarget}, 0.2)
@@ -3719,7 +3753,10 @@ function Library:CreateWindow(options)
                 end
             end)
 
-            Theme:Register(tabBtn, "TextColor3", "Text")
+            Theme:Register(tabObj.Label, "TextColor3", "Text")
+            if tabObj.Icon then
+                Theme:Register(tabObj.Icon, "ImageColor3", "Text")
+            end
             Theme:Register(tabBtn, "BackgroundColor3", "Hover")
             tween(tabBtn, {BackgroundTransparency = 0}, 0.2)
             local activeIndicatorTarget = UDim2.new(0, 3, 0, 18)
