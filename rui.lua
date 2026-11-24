@@ -307,10 +307,21 @@ local function drag(topbar, window, canDrag)
 end
 
 -- notifs
+-- events are violet so they dont get mistaken for a normal accent toast
+local NOTIF_COLORS = {
+    normal = nil, -- falls through to the theme accent
+    info = Color3.fromRGB(90, 180, 255),
+    event = Color3.fromRGB(190, 125, 255),
+    warning = Color3.fromRGB(255, 185, 65),
+    error = Color3.fromRGB(255, 95, 95),
+    success = Color3.fromRGB(80, 215, 130)
+}
+
 local notifs = {
     Enabled = true,
     Gui = nil,
     Container = nil,
+    WideContainer = nil,
     Active = {},
     Queue = {},
     busy = false
@@ -339,6 +350,22 @@ function notifs:Init(parent)
     
     mk("UIListLayout", {
         Parent = self.Container,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        VerticalAlignment = Enum.VerticalAlignment.Bottom,
+        Padding = UDim.new(0, 10)
+    })
+
+    -- separate lane for long notifications, same anchor so they stack cleanly
+    self.WideContainer = mk("Frame", {
+        Name = "WideContainer",
+        Parent = self.Gui,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, -20, 1, -20),
+        Size = UDim2.new(0, 440, 1, -40),
+        AnchorPoint = Vector2.new(1, 1)
+    })
+    mk("UIListLayout", {
+        Parent = self.WideContainer,
         SortOrder = Enum.SortOrder.LayoutOrder,
         VerticalAlignment = Enum.VerticalAlignment.Bottom,
         Padding = UDim.new(0, 10)
@@ -382,46 +409,67 @@ function notifs:dismiss(notifData)
     end
 end
 
-function notifs:Notify(title, desc, duration)
+-- accepts either (title, desc, duration, kind, long) or a table:
+-- {Title, Content, Duration, Type, Long}
+function notifs:Notify(title, desc, duration, kind, long)
     if not self.Enabled then return end
+
+    if type(title) == "table" then
+        local o = title
+        title = o.Title or o.title or "Notification"
+        desc = o.Content or o.content or o.Desc or o.desc
+        duration = o.Duration or o.duration
+        kind = o.Type or o.type or o.Kind or o.kind
+        long = o.Long or o.long
+    end
+
     duration = duration or 5
-    
+
     if self.busy then
-        table.insert(self.Queue, {title, desc, duration})
+        table.insert(self.Queue, {title, desc, duration, kind, long})
         return
     end
-    
+
     self.busy = true
-    
+
+    local function pump()
+        self.busy = false
+        if #self.Queue > 0 then
+            local q = table.remove(self.Queue, 1)
+            self:Notify(q[1], q[2], q[3], q[4], q[5])
+        end
+    end
+
     if #self.Active >= 3 then
         local oldest = self.Active[1]
         task.spawn(function()
             pcall(function() self:dismiss(oldest) end)
             task.wait(0.2)
-            local ok, err = pcall(function() self:showNotif(title, desc, duration) end)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long) end)
             if not ok then warn("notif broke: " .. tostring(err)) end
-            self.busy = false
-            if #self.Queue > 0 then
-                local q = table.remove(self.Queue, 1)
-                self:Notify(q[1], q[2], q[3])
-            end
+            pump()
         end)
     else
         task.spawn(function()
-            local ok, err = pcall(function() self:showNotif(title, desc, duration) end)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long) end)
             if not ok then warn("notif broke: " .. tostring(err)) end
-            self.busy = false
-            if #self.Queue > 0 then
-                local q = table.remove(self.Queue, 1)
-                self:Notify(q[1], q[2], q[3])
-            end
+            pump()
         end)
     end
 end
 
-function notifs:showNotif(title, desc, duration)
+function notifs:showNotif(title, desc, duration, kind, long)
+    local parent = long and (self.WideContainer or self.Container) or self.Container
+    local textWidth = long and 398 or 258
+
+    local accent = Theme.Themes.Default.Accent
+    if kind then
+        local picked = NOTIF_COLORS[tostring(kind):lower()]
+        if picked then accent = picked end
+    end
+
     local notif = mk("Frame", {
-        Parent = self.Container,
+        Parent = parent,
         Size = UDim2.new(1, 0, 0, 0),
         BackgroundTransparency = 1,
         ClipsDescendants = true,
@@ -441,7 +489,7 @@ function notifs:showNotif(title, desc, duration)
         BackgroundTransparency = 1,
         BorderSizePixel = 0
     })
-    Theme:Register(dot, "BackgroundColor3", "Accent")
+    dot.BackgroundColor3 = accent
     mk("UICorner", {Parent = dot, CornerRadius = UDim.new(1, 0)})
     
     local titleLbl = mk("TextLabel", {
@@ -484,7 +532,7 @@ function notifs:showNotif(title, desc, duration)
     })
     Theme:Register(closeBtn, "TextColor3", "SubText")
     
-    local bounds = TextService:GetTextSize(desc, 12, Enum.Font.Gotham, Vector2.new(258, math.huge))
+    local bounds = TextService:GetTextSize(desc, 12, Enum.Font.GothamMedium, Vector2.new(textWidth, math.huge))
     local descHeight = math.max(14, bounds.Y)
     local totalHeight = 30 + descHeight + 14
     
@@ -504,7 +552,7 @@ function notifs:showNotif(title, desc, duration)
         Size = UDim2.new(1, 0, 1, 0),
         BackgroundTransparency = 1
     })
-    Theme:Register(bar, "BackgroundColor3", "Accent")
+    bar.BackgroundColor3 = accent
     mk("UICorner", {Parent = bar, CornerRadius = UDim.new(1, 0)})
     
     local notifData = {
@@ -530,7 +578,7 @@ function notifs:showNotif(title, desc, duration)
     track(closeBtn.MouseButton1Down:Connect(function()
         if notifData.dead then return end
         -- Click is a bg color, way too dark to read as text
-        closeBtn.TextColor3 = Theme.Themes.Default.Accent
+        closeBtn.TextColor3 = accent
     end))
     track(closeBtn.MouseButton1Up:Connect(function()
         if notifData.dead then return end
@@ -712,8 +760,32 @@ function Library:SafeCallback(callback, ...)
     end)
 end
 
-function Library:Notify(title, desc, duration)
-    return notifs:Notify(title, desc, duration)
+function Library:Notify(title, desc, duration, kind, long)
+    return notifs:Notify(title, desc, duration, kind, long)
+end
+
+function Library:NotifyInfo(title, desc, duration)
+    return notifs:Notify(title, desc, duration, "info")
+end
+
+function Library:NotifyEvent(title, desc, duration)
+    return notifs:Notify(title, desc, duration, "event")
+end
+
+function Library:NotifyWarning(title, desc, duration)
+    return notifs:Notify(title, desc, duration, "warning")
+end
+
+function Library:NotifyError(title, desc, duration)
+    return notifs:Notify(title, desc, duration, "error")
+end
+
+function Library:NotifySuccess(title, desc, duration)
+    return notifs:Notify(title, desc, duration, "success")
+end
+
+function Library:NotifyLong(title, desc, duration, kind)
+    return notifs:Notify(title, desc, duration, kind, true)
 end
 
 -- ---- theme stuff, was only reachable from the customize tab before ----
