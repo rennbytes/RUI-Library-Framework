@@ -1016,12 +1016,13 @@ function Library:Modal(opts)
     local cardStroke = mk("UIStroke", {Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 1})
     Theme:Register(cardStroke, "Color", "Border")
 
-    local body = mk("Frame", { Parent = card, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1 })
+    -- content sits at the top, footer is anchored to the bottom edge of the card
+    -- so nav never rides up and down with the page text while the card resizes
+    local body = mk("Frame", { Parent = card, Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1 })
     local bodyLayout = mk("UIListLayout", { Parent = body, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 12) })
     mk("UIPadding", {
         Parent = body,
         PaddingTop = UDim.new(0, 20),
-        PaddingBottom = UDim.new(0, 20),
         PaddingLeft = UDim.new(0, 20),
         PaddingRight = UDim.new(0, 20)
     })
@@ -1047,13 +1048,34 @@ function Library:Modal(opts)
         GroupTransparency = 0,
         LayoutOrder = 2
     })
+
+    local footer = mk("Frame", {
+        Parent = card,
+        AnchorPoint = Vector2.new(0, 1),
+        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, 0, 0, 0),
+        BackgroundTransparency = 1
+    })
+    mk("UIListLayout", {
+        Parent = footer,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, 12),
+        VerticalAlignment = Enum.VerticalAlignment.Bottom
+    })
+    mk("UIPadding", {
+        Parent = footer,
+        PaddingBottom = UDim.new(0, 20),
+        PaddingLeft = UDim.new(0, 20),
+        PaddingRight = UDim.new(0, 20)
+    })
+
     local dotsRow = nil
     if pages then
         dotsRow = mk("Frame", {
-            Parent = body,
+            Parent = footer,
             Size = UDim2.new(1, 0, 0, 6),
             BackgroundTransparency = 1,
-            LayoutOrder = 3
+            LayoutOrder = 1
         })
         local dotsLayout = mk("UIListLayout", {
             Parent = dotsRow,
@@ -1065,10 +1087,10 @@ function Library:Modal(opts)
     end
 
     local btnRow = mk("Frame", {
-        Parent = body,
+        Parent = footer,
         Size = UDim2.new(1, 0, 0, 32),
         BackgroundTransparency = 1,
-        LayoutOrder = 4
+        LayoutOrder = 2
     })
     mk("UIListLayout", {
         Parent = btnRow,
@@ -1090,6 +1112,8 @@ function Library:Modal(opts)
     end
 
     -- cb fires after the button tween, closeAfter decides whether that kills the modal
+    local btnBases = {}
+
     local function makeBtn(text, order, tint, cb, closeAfter)
         local b = mk("TextButton", {
             Parent = btnRow,
@@ -1104,12 +1128,20 @@ function Library:Modal(opts)
             AutoButtonColor = false
         })
         mk("UICorner", {Parent = b, CornerRadius = UDim.new(0, 6)})
-        local hover = tint and tint:Lerp(Color3.new(1, 1, 1), 0.15) or Theme.Themes.Default.Hover
-        local click = tint and tint:Lerp(Color3.new(0, 0, 0), 0.15) or Theme.Themes.Default.Click
-        b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = hover}, 0.15) end)
-        b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = tint or Theme.Themes.Default.Container}, 0.15) end)
-        b.MouseButton1Down:Connect(function() tween(b, {BackgroundColor3 = click}, 0.1) end)
-        b.MouseButton1Up:Connect(function() tween(b, {BackgroundColor3 = hover}, 0.1) end)
+        -- base is mutable, paged buttons swap between container and accent as
+        -- the page changes. hover states are derived from it on the fly so a
+        -- page swap never leaves a stale accent stuck underneath the cursor.
+        btnBases[b] = tint or Theme.Themes.Default.Container
+        local function hoverCol()
+            return btnBases[b]:Lerp(Color3.new(1, 1, 1), 0.15)
+        end
+        local function clickCol()
+            return btnBases[b]:Lerp(Color3.new(0, 0, 0), 0.15)
+        end
+        b.MouseEnter:Connect(function() tween(b, {BackgroundColor3 = hoverCol()}, 0.15) end)
+        b.MouseLeave:Connect(function() tween(b, {BackgroundColor3 = btnBases[b]}, 0.15) end)
+        b.MouseButton1Down:Connect(function() tween(b, {BackgroundColor3 = clickCol()}, 0.1) end)
+        b.MouseButton1Up:Connect(function() tween(b, {BackgroundColor3 = hoverCol()}, 0.1) end)
         b.MouseButton1Click:Connect(function()
             if closeAfter ~= false then
                 shut()
@@ -1226,17 +1258,26 @@ function Library:Modal(opts)
             backBtn.BackgroundTransparency = canBack and 0 or 0.6
         end
         if nextBtn and pages then
-            nextBtn.Text = pageIndex == #pages and (opts.Finish or "Finish") or (opts.Next or "Next")
-            nextBtn.Size = UDim2.new(0, pageIndex == #pages and 96 or 84, 1, 0)
-            nextBtn.BackgroundColor3 = pageIndex == #pages and Theme.Themes.Default.Accent or Theme.Themes.Default.Hover
-            Theme:Register(nextBtn, "BackgroundColor3", pageIndex == #pages and "Accent" or "Container")
-            nextBtn.TextColor3 = pageIndex == #pages and Theme.Themes.Default.Background or Theme.Themes.Default.Text
-            Theme:Register(nextBtn, "TextColor3", pageIndex == #pages and "Background" or "Text")
+            local finishPage = pageIndex == #pages
+            nextBtn.Text = finishPage and (opts.Finish or "Finish") or (opts.Next or "Next")
+            nextBtn.Size = UDim2.new(0, finishPage and 96 or 84, 1, 0)
+            local base = finishPage and Theme.Themes.Default.Accent or Theme.Themes.Default.Container
+            btnBases[nextBtn] = base
+            if contentReady then
+                tween(nextBtn, {BackgroundColor3 = base}, 0.2)
+            else
+                nextBtn.BackgroundColor3 = base
+            end
+            nextBtn.TextColor3 = finishPage and Theme.Themes.Default.Background or Theme.Themes.Default.Text
+            Theme:Register(nextBtn, "TextColor3", finishPage and "Background" or "Text")
         end
 
         -- the staging frame is measured by hand so the target is known before
         -- Roblox updates any layout, no waiting a frame and snapping into place
-        local targetH = math.max(180, fixedH + math.max(0, stagedH - 10))
+        local pageH = math.max(0, stagedH - 10)
+        body.Size = UDim2.new(1, 0, 0, 54 + pageH)
+        footer.Size = UDim2.new(1, 0, 0, pages and 70 or 52)
+        local targetH = math.max(180, fixedH + pageH)
 
         if not contentReady then
             card.Size = UDim2.new(0, cardW, 0, targetH)
