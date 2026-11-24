@@ -4166,7 +4166,8 @@ function Library:CreateWindow(options)
         local btnRow = mk("Frame", {
             Parent = card,
             Size = UDim2.new(1, -PAD * 2, 0, 36),
-            Position = UDim2.new(0, PAD, 0, 150)
+            Position = UDim2.new(0, PAD, 0, 150),
+            BackgroundTransparency = 1
         })
         mk("UIListLayout", {
             Parent = btnRow,
