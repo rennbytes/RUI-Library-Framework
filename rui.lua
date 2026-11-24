@@ -578,18 +578,25 @@ local ICONS = {
 local function mkIcon(name, parent, size, themeKey, props)
     local id = ICONS[name]
     if not id then return nil end
-    local image = type(id) == "table" and id.Image or id
-    local img = mk("ImageLabel", {
+    local isSheet = type(id) == "table"
+    local image = isSheet and id.Image or id
+    local iconProps = {
         Parent = parent,
         Size = UDim2.new(0, size, 0, size),
         BackgroundTransparency = 1,
         Image = image,
-        ImageRectOffset = type(id) == "table" and id.Offset or nil,
-        ImageRectSize = type(id) == "table" and id.Size or nil,
         ScaleType = Enum.ScaleType.Fit,
         ImageColor3 = Theme.Themes.Default[themeKey or "Text"],
         ImageTransparency = 0
-    })
+    }
+    -- nil is not a valid value for these, only set them for sprite sheet icons
+    if isSheet and id.Offset then
+        iconProps.ImageRectOffset = id.Offset
+    end
+    if isSheet and id.Size then
+        iconProps.ImageRectSize = id.Size
+    end
+    local img = mk("ImageLabel", iconProps)
     for k, v in pairs(props or {}) do
         img[k] = v
     end
@@ -1525,29 +1532,35 @@ function Library:Modal(opts)
     })
     Theme:Register(bodyTitle, "TextColor3", "Text")
 
-    -- header icon, swapped per page when the page gives one
+    -- header icon lives on the card, not the body: body has a UIListLayout and
+    -- would treat the icon as an extra row and push the title down
     local headerIcon = mk("ImageLabel", {
-        Parent = body,
+        Parent = card,
         Size = UDim2.new(0, 18, 0, 18),
-        Position = UDim2.new(0, 20, 0, 23),
+        Position = UDim2.new(0, 20, 0, 22),
         BackgroundTransparency = 1,
         ScaleType = Enum.ScaleType.Fit,
-        Visible = false
+        Visible = false,
+        ZIndex = 2
     })
     Theme:Register(headerIcon, "ImageColor3", "Accent")
     local function applyTitleIcon(name)
         local id = name and ICONS[name]
         if not id then
             headerIcon.Visible = false
-            bodyTitle.Position = UDim2.new(0, 20, 0, 0)
+            bodyTitle.Position = UDim2.new(0, 0, 0, 0)
             bodyTitle.Size = UDim2.new(1, -40, 0, 22)
             return
         end
         headerIcon.Image = type(id) == "table" and id.Image or id
-        headerIcon.ImageRectOffset = type(id) == "table" and id.Offset or nil
-        headerIcon.ImageRectSize = type(id) == "table" and id.Size or nil
+        if type(id) == "table" and id.Offset then
+            headerIcon.ImageRectOffset = id.Offset
+        end
+        if type(id) == "table" and id.Size then
+            headerIcon.ImageRectSize = id.Size
+        end
         headerIcon.Visible = true
-        bodyTitle.Position = UDim2.new(0, 44, 0, 0)
+        bodyTitle.Position = UDim2.new(0, 24, 0, 0)
         bodyTitle.Size = UDim2.new(1, -64, 0, 22)
     end
     applyTitleIcon(opts.Icon)
