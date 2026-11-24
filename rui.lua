@@ -980,8 +980,12 @@ function Library:Modal(opts)
     local parent = getModalGui()
     local pages = type(opts.Pages) == "table" and opts.Pages or nil
     local cardW = opts.Width or (pages and 440 or 380)
+    -- title, button row, the gaps between rows and the body padding
+    local fixedH = pages and 136 or 118
     local pageIndex = 1
     local closed = false
+    local contentReady = false
+    local resizeTween = nil
 
     local overlay = mk("Frame", {
         Parent = parent,
@@ -1033,10 +1037,11 @@ function Library:Modal(opts)
     Theme:Register(bodyTitle, "TextColor3", "Text")
 
     -- pages get rebuilt into here, normal modals just drop one copy in
-    local pageArea = mk("Frame", {
+    local pageArea = mk("CanvasGroup", {
         Parent = body,
         Size = UDim2.new(1, 0, 0, 0),
         BackgroundTransparency = 1,
+        GroupTransparency = 0,
         LayoutOrder = 2
     })
     local dotsRow = nil
@@ -1114,6 +1119,13 @@ function Library:Modal(opts)
     local renderPage, nextBtn, backBtn
 
     renderPage = function()
+        -- fade the old page out while the card eases to the new height, then
+        -- fade the new one in. swapping content at full opacity made every
+        -- height change look like a snap even when card.Size was tweened.
+        if contentReady then
+            pageArea.GroupTransparency = 1
+        end
+
         -- build the new content off-parent first, then swap in one shot. the old
         -- version cleared pageArea first, AbsoluteContentSize hit zero for a
         -- frame, and the card + dim flashed while they shrank and grew back
@@ -1218,6 +1230,22 @@ function Library:Modal(opts)
             Theme:Register(nextBtn, "TextColor3", pageIndex == #pages and "Background" or "Text")
         end
 
+        -- the staging frame is measured by hand so the target is known before
+        -- Roblox updates any layout, no waiting a frame and snapping into place
+        local targetH = math.max(180, fixedH + math.max(0, stagedH - 10))
+
+        if not contentReady then
+            card.Size = UDim2.new(0, cardW, 0, targetH)
+            contentReady = true
+        else
+            if resizeTween then
+                resizeTween:Cancel()
+            end
+            resizeTween = tween(card, {Size = UDim2.new(0, cardW, 0, targetH)}, 0.3, Enum.EasingStyle.Quint)
+        end
+
+        tween(pageArea, {GroupTransparency = 0}, 0.22, Enum.EasingStyle.Quad)
+
         if page.OnEnter then
             pcall(page.OnEnter)
         end
@@ -1280,15 +1308,6 @@ function Library:Modal(opts)
             shut()
         end
     end))
-
-    local function sizeCard()
-        if card.Parent then
-            local h = bodyLayout.AbsoluteContentSize.Y
-            card.Size = UDim2.new(0, cardW, 0, h + 40)
-        end
-    end
-    track(bodyLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(sizeCard))
-    sizeCard()
 
     tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
     tween(card, {GroupTransparency = 0}, 0.3, Enum.EasingStyle.Quint)
