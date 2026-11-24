@@ -1011,7 +1011,10 @@ function Library:Modal(opts)
     track(card)
     Theme:Register(card, "BackgroundColor3", "Container")
     mk("UICorner", {Parent = card, CornerRadius = UDim.new(0, 12)})
-    Theme:Register(mk("UIStroke", {Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5}), "Color", "Border")
+    -- stroke lives outside the group transparency effect, so it needs its own
+    -- fade or the outline pops while the rest of the card dissolves
+    local cardStroke = mk("UIStroke", {Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 1})
+    Theme:Register(cardStroke, "Color", "Border")
 
     local body = mk("Frame", { Parent = card, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1 })
     local bodyLayout = mk("UIListLayout", { Parent = body, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 12) })
@@ -1080,6 +1083,7 @@ function Library:Modal(opts)
         closed = true
         tween(overlay, {BackgroundTransparency = 1}, 0.2)
         tween(card, {GroupTransparency = 1}, 0.2)
+        tween(cardStroke, {Transparency = 1}, 0.2)
         task.delay(0.2, function()
             if overlay.Parent then overlay:Destroy() end
         end)
@@ -1311,6 +1315,7 @@ function Library:Modal(opts)
 
     tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
     tween(card, {GroupTransparency = 0}, 0.3, Enum.EasingStyle.Quint)
+    tween(cardStroke, {Transparency = 0.5}, 0.3, Enum.EasingStyle.Quint)
 end
 
 function Library:Confirm(title, content, onConfirm)
@@ -3768,17 +3773,21 @@ function Library:CreateWindow(options)
     -- key gate, only made when options.KeySystem is set. sits over the window
     -- until a key goes through, the script sits behind `while not
     -- getgenv().SCRIPT_KEY do task.wait(0.1) end` til then
-    local gateOverlay, gateCard = nil, nil
+    local gateOverlay, gateCard, gateStroke = nil, nil, nil
     local gateOldDisplay = nil
 
     local function closeGate()
         if not gateOverlay then return end
         local ov = gateOverlay
         local cd = gateCard
-        gateOverlay, gateCard = nil, nil
+        local gs = gateStroke
+        gateOverlay, gateCard, gateStroke = nil, nil, nil
         tween(ov, {BackgroundTransparency = 1}, 0.3)
         if cd then
             tween(cd, {GroupTransparency = 1}, 0.25)
+        end
+        if gs then
+            tween(gs, {Transparency = 1}, 0.25)
         end
         local gateShadow = ov:FindFirstChild("GateShadow")
         local gateShadowImg = gateShadow and gateShadow:FindFirstChild("Shadow")
@@ -3868,6 +3877,7 @@ function Library:CreateWindow(options)
         mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 12) })
         local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(cardStroke, "Color", "Border")
+        gateStroke = cardStroke
 
         -- top bar, same traffic light + bold title as CreateWindow
         local topbar = mk("TextButton", {
