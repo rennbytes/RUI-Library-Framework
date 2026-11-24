@@ -290,6 +290,9 @@ local ICONS = {
     star = "rbxassetid://136141469398409",
     link = "rbxassetid://131607023382430",
     globe = "rbxassetid://114238209622913",
+    boxes = "rbxassetid://136372617578355",
+    ["log-out"] = "rbxassetid://84895399304975",
+    ["refresh-cw"] = "rbxassetid://138133190015277",
 -- larger lucide set, exposed so scripts can grab any of these by name
     ["activity"] = "rbxassetid://94212016861936",
     ["anchor"] = "rbxassetid://92181172123618",
@@ -765,9 +768,9 @@ function notifs:dismiss(notifData)
     end
 end
 
--- accepts either (title, desc, duration, kind, long) or a table:
--- {Title, Content, Duration, Type, Long}
-function notifs:Notify(title, desc, duration, kind, long)
+-- accepts either (title, desc, duration, kind, long, icon) or a table:
+-- {Title, Content, Duration, Type, Long, Icon}
+function notifs:Notify(title, desc, duration, kind, long, icon)
     if not self.Enabled then return end
 
     if type(title) == "table" then
@@ -777,12 +780,13 @@ function notifs:Notify(title, desc, duration, kind, long)
         duration = o.Duration or o.duration
         kind = o.Type or o.type or o.Kind or o.kind
         long = o.Long or o.long
+        icon = o.Icon or o.icon
     end
 
     duration = duration or 5
 
     if self.busy then
-        table.insert(self.Queue, {title, desc, duration, kind, long})
+        table.insert(self.Queue, {title, desc, duration, kind, long, icon})
         return
     end
 
@@ -792,7 +796,7 @@ function notifs:Notify(title, desc, duration, kind, long)
         self.busy = false
         if #self.Queue > 0 then
             local q = table.remove(self.Queue, 1)
-            self:Notify(q[1], q[2], q[3], q[4], q[5])
+            self:Notify(q[1], q[2], q[3], q[4], q[5], q[6])
         end
     end
 
@@ -801,20 +805,20 @@ function notifs:Notify(title, desc, duration, kind, long)
         task.spawn(function()
             pcall(function() self:dismiss(oldest) end)
             task.wait(0.2)
-            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long) end)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long, icon) end)
             if not ok then warn("notif broke: " .. tostring(err)) end
             pump()
         end)
     else
         task.spawn(function()
-            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long) end)
+            local ok, err = pcall(function() self:showNotif(title, desc, duration, kind, long, icon) end)
             if not ok then warn("notif broke: " .. tostring(err)) end
             pump()
         end)
     end
 end
 
-function notifs:showNotif(title, desc, duration, kind, long)
+function notifs:showNotif(title, desc, duration, kind, long, icon)
     local parent = long and (self.WideContainer or self.Container) or self.Container
     local textWidth = long and 398 or 258
 
@@ -838,7 +842,7 @@ function notifs:showNotif(title, desc, duration, kind, long)
     
     addShadow(notif, 0.4, 15)
     
-    local iconName = NOTIF_ICONS[tostring(kind or "normal"):lower()] or "info"
+    local iconName = icon or NOTIF_ICONS[tostring(kind or "normal"):lower()] or "info"
     local dot = mkIcon(iconName, notif, 16, nil, {
         Position = UDim2.new(0, 10, 0, 11),
         ImageColor3 = accent,
@@ -1133,32 +1137,32 @@ function Library:SafeCallback(callback, ...)
     end)
 end
 
-function Library:Notify(title, desc, duration, kind, long)
-    return notifs:Notify(title, desc, duration, kind, long)
+function Library:Notify(title, desc, duration, kind, long, icon)
+    return notifs:Notify(title, desc, duration, kind, long, icon)
 end
 
-function Library:NotifyInfo(title, desc, duration)
-    return notifs:Notify(title, desc, duration, "info")
+function Library:NotifyInfo(title, desc, duration, icon)
+    return notifs:Notify(title, desc, duration, "info", false, icon)
 end
 
-function Library:NotifyEvent(title, desc, duration)
-    return notifs:Notify(title, desc, duration, "event")
+function Library:NotifyEvent(title, desc, duration, icon)
+    return notifs:Notify(title, desc, duration, "event", false, icon)
 end
 
-function Library:NotifyWarning(title, desc, duration)
-    return notifs:Notify(title, desc, duration, "warning")
+function Library:NotifyWarning(title, desc, duration, icon)
+    return notifs:Notify(title, desc, duration, "warning", false, icon)
 end
 
-function Library:NotifyError(title, desc, duration)
-    return notifs:Notify(title, desc, duration, "error")
+function Library:NotifyError(title, desc, duration, icon)
+    return notifs:Notify(title, desc, duration, "error", false, icon)
 end
 
-function Library:NotifySuccess(title, desc, duration)
-    return notifs:Notify(title, desc, duration, "success")
+function Library:NotifySuccess(title, desc, duration, icon)
+    return notifs:Notify(title, desc, duration, "success", false, icon)
 end
 
-function Library:NotifyLong(title, desc, duration, kind)
-    return notifs:Notify(title, desc, duration, kind, true)
+function Library:NotifyLong(title, desc, duration, kind, icon)
+    return notifs:Notify(title, desc, duration, kind, true, icon)
 end
 
 -- ---- theme stuff, was only reachable from the customize tab before ----
@@ -1444,8 +1448,9 @@ local function getModalGui()
     return modalGui
 end
 
--- opts: Title, Content, Confirm, Cancel, Danger, OnConfirm, CloseOnClickOutside
--- or opts.Onboarding = { {Title, Content, Bullets, Image, Footer, OnEnter}, ... }
+-- opts: Title, Icon, Content, Confirm, Cancel, Danger, OnConfirm, CloseOnClickOutside
+-- button icons: ConfirmIcon, CancelIcon, NextIcon, BackIcon
+-- or opts.Onboarding = { {Title, Icon, Content, Bullets, Image, Footer, OnEnter}, ... }
 -- onboarding turns the modal into a paged wizard. Pages is kept as an alias.
 -- CloseOnClickOutside defaults to true, set it false for forced-choice dialogs
 function Library:Modal(opts)
@@ -1519,6 +1524,33 @@ function Library:Modal(opts)
         LayoutOrder = 1
     })
     Theme:Register(bodyTitle, "TextColor3", "Text")
+
+    -- header icon, swapped per page when the page gives one
+    local headerIcon = mk("ImageLabel", {
+        Parent = body,
+        Size = UDim2.new(0, 18, 0, 18),
+        Position = UDim2.new(0, 20, 0, 23),
+        BackgroundTransparency = 1,
+        ScaleType = Enum.ScaleType.Fit,
+        Visible = false
+    })
+    Theme:Register(headerIcon, "ImageColor3", "Accent")
+    local function applyTitleIcon(name)
+        local id = name and ICONS[name]
+        if not id then
+            headerIcon.Visible = false
+            bodyTitle.Position = UDim2.new(0, 20, 0, 0)
+            bodyTitle.Size = UDim2.new(1, -40, 0, 22)
+            return
+        end
+        headerIcon.Image = type(id) == "table" and id.Image or id
+        headerIcon.ImageRectOffset = type(id) == "table" and id.Offset or nil
+        headerIcon.ImageRectSize = type(id) == "table" and id.Size or nil
+        headerIcon.Visible = true
+        bodyTitle.Position = UDim2.new(0, 44, 0, 0)
+        bodyTitle.Size = UDim2.new(1, -64, 0, 22)
+    end
+    applyTitleIcon(opts.Icon)
 
     -- pages get rebuilt into here, normal modals just drop one copy in
     local pageArea = mk("CanvasGroup", {
@@ -1594,19 +1626,28 @@ function Library:Modal(opts)
     -- cb fires after the button tween, closeAfter decides whether that kills the modal
     local btnBases = {}
 
-    local function makeBtn(text, order, tint, cb, closeAfter)
+    local function makeBtn(text, order, tint, cb, closeAfter, iconName)
         local b = mk("TextButton", {
             Parent = btnRow,
             Size = UDim2.new(0, tint and 96 or 84, 1, 0),
             LayoutOrder = order,
             BackgroundColor3 = tint or Theme.Themes.Default.Container,
             BorderSizePixel = 0,
-            Text = text,
+            Text = iconName and (" " .. text) or text,
+            TextXAlignment = iconName and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center,
             Font = Enum.Font.GothamMedium,
             TextSize = 13,
             TextColor3 = tint and Theme.Themes.Default.Background or Theme.Themes.Default.Text,
             AutoButtonColor = false
         })
+        if iconName then
+            mk("UIPadding", { Parent = b, PaddingLeft = UDim.new(0, 32) })
+            mkIcon(iconName, b, 14, tint and "Background" or "Text", {
+                AnchorPoint = Vector2.new(0, 0.5),
+                Position = UDim2.new(0, 10, 0.5, 0),
+                ImageTransparency = 0.1
+            })
+        end
         mk("UICorner", {Parent = b, CornerRadius = UDim.new(0, 6)})
         -- base is mutable, paged buttons swap between container and accent as
         -- the page changes. hover states are derived from it on the fly so a
@@ -1679,7 +1720,9 @@ function Library:Modal(opts)
         if pages then
             page = pages[pageIndex] or {}
             bodyTitle.Text = page.Title or opts.Title or "Welcome"
+            applyTitleIcon(page.Icon or opts.Icon)
         else
+            applyTitleIcon(opts.Icon)
             page = opts
         end
 
@@ -1781,14 +1824,14 @@ function Library:Modal(opts)
 
     if pages then
         if opts.Cancel ~= false then
-            makeBtn(opts.Cancel or "Close", 1, nil, nil)
+            makeBtn(opts.Cancel or "Close", 1, nil, nil, true, opts.CancelIcon or "x")
         end
         backBtn = makeBtn("Back", 2, nil, function()
             if pageIndex > 1 then
                 pageIndex = pageIndex - 1
                 renderPage()
             end
-        end, false)
+        end, false, opts.BackIcon or "arrow-left")
 
         nextBtn = makeBtn(opts.Next or "Next", 3, Theme.Themes.Default.Accent, function()
             if pageIndex < #pages then
@@ -1798,12 +1841,12 @@ function Library:Modal(opts)
                 shut()
                 if opts.OnConfirm then pcall(opts.OnConfirm) end
             end
-        end, false)
+        end, false, opts.NextIcon or "arrow-right")
     else
         if opts.Cancel then
-            makeBtn(opts.Cancel, 1, nil, nil)
+            makeBtn(opts.Cancel, 1, nil, nil, true, opts.CancelIcon or "x")
         end
-        makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm)
+        makeBtn(opts.Confirm or "Confirm", 2, opts.Danger and DANGER or Theme.Themes.Default.Accent, opts.OnConfirm, true, opts.ConfirmIcon or "check")
     end
 
     renderPage()
@@ -1862,6 +1905,7 @@ end
 function Library:Onboarding(title, pages, onFinish)
     return self:Modal({
         Title = title or "Welcome",
+        Icon = "sparkles",
         Onboarding = pages,
         Next = "Next",
         Finish = "Done",
