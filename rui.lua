@@ -972,13 +972,21 @@ local function getModalGui()
     return modalGui
 end
 
--- opts: Title, Content, Confirm, Cancel, Danger, OnConfirm
--- or opts.Pages = { {Title, Content, Bullets, Image, Footer, OnEnter}, ... }
--- pages turn the modal into a little wizard, used for onboarding
+-- opts: Title, Content, Confirm, Cancel, Danger, OnConfirm, CloseOnClickOutside
+-- or opts.Onboarding = { {Title, Content, Bullets, Image, Footer, OnEnter}, ... }
+-- onboarding turns the modal into a paged wizard. Pages is kept as an alias.
+-- CloseOnClickOutside defaults to true, set it false for forced-choice dialogs
 function Library:Modal(opts)
     opts = opts or {}
     local parent = getModalGui()
-    local pages = type(opts.Pages) == "table" and opts.Pages or nil
+    local pages = type(opts.Onboarding) == "table" and opts.Onboarding
+        or (type(opts.Pages) == "table" and opts.Pages or nil)
+    -- onboarding is a forced flow: finish it or use the close button if there is
+    -- one. plain dialogs keep the old click-outside-to-dismiss behaviour.
+    local closeOutside = opts.CloseOnClickOutside
+    if closeOutside == nil then
+        closeOutside = pages == nil
+    end
     local cardW = opts.Width or (pages and 440 or 380)
     -- title, button row, the gaps between rows and the body padding
     local fixedH = pages and 136 or 118
@@ -1345,6 +1353,7 @@ function Library:Modal(opts)
                 return
             end
         end
+        if not closeOutside then return end
         if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
         local abs = card.AbsolutePosition
         local sz = card.AbsoluteSize
@@ -1381,7 +1390,7 @@ end
 function Library:Onboarding(title, pages, onFinish)
     return self:Modal({
         Title = title or "Welcome",
-        Pages = pages,
+        Onboarding = pages,
         Next = "Next",
         Finish = "Done",
         Cancel = "Close",
