@@ -2675,7 +2675,7 @@ function Library:CreateWindow(options)
     -- just outside the tab edge instead of flat against the text
     local activeGlow = mk("Frame", {
         Parent = tabBtn,
-        Size = UDim2.new(0, 8, 0, 0),
+        Size = UDim2.new(0, 8, 0, 28),
         Position = UDim2.new(0, -9, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
         BackgroundTransparency = 1
@@ -2685,14 +2685,14 @@ function Library:CreateWindow(options)
 
     local activeIndicator = mk("Frame", {
         Parent = tabBtn,
-        Size = UDim2.new(0, 3, 0, 0),
+        Size = UDim2.new(0, 3, 0, 22),
         Position = UDim2.new(0, -9, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundTransparency = 0
+        BackgroundTransparency = 1
     })
     Theme:Register(activeIndicator, "BackgroundColor3", "Accent")
     mk("UICorner", {Parent = activeIndicator, CornerRadius = UDim.new(1, 0)})
-    addShadow(activeIndicator, 0.6, 6)
+    local indicatorShadow = addShadow(activeIndicator, 1, 6)
 
         local tabObj = {
             Name = name,
@@ -2700,6 +2700,7 @@ function Library:CreateWindow(options)
             Label = tabLabel,
             Icon = tabIcon,
             Indicator = activeIndicator,
+            IndicatorShadow = indicatorShadow,
             Glow = activeGlow,
             SectionDefs = {},
             ContentRoot = nil,
@@ -3734,11 +3735,14 @@ function Library:CreateWindow(options)
                 if oldTab.Icon then
                     Theme:Register(oldTab.Icon, "ImageColor3", "SubText")
                 end
-                tween(oldTab.Button, {BackgroundTransparency = 1}, 0.2)
-                local oldIndicatorTarget = UDim2.new(0, 3, 0, 0)
-                tween(oldTab.Indicator, {Size = oldIndicatorTarget}, 0.2)
+                tween(oldTab.Button, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
+                -- rail fades with the body instead of shrinking away
+                tween(oldTab.Indicator, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
+                if oldTab.IndicatorShadow then
+                    tween(oldTab.IndicatorShadow, {ImageTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
+                end
                 if oldTab.Glow then
-                    tween(oldTab.Glow, {Size = UDim2.new(0, 8, 0, 0), BackgroundTransparency = 1}, 0.2)
+                    tween(oldTab.Glow, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
                 end
             end
 
@@ -3774,11 +3778,14 @@ function Library:CreateWindow(options)
                 Theme:Register(tabObj.Icon, "ImageColor3", "Text")
             end
             Theme:Register(tabBtn, "BackgroundColor3", "Hover")
-            tween(tabBtn, {BackgroundTransparency = 0}, 0.2)
-            local activeIndicatorTarget = UDim2.new(0, 3, 0, 22)
-            tween(activeIndicator, {Size = activeIndicatorTarget}, 0.28, Enum.EasingStyle.Back)
+            tween(tabBtn, {BackgroundTransparency = 0}, 0.2, Enum.EasingStyle.Quint)
+            -- same 0.2 Quint as the content fade, so rail and body move together
+            tween(activeIndicator, {BackgroundTransparency = 0}, 0.2, Enum.EasingStyle.Quint)
+            if indicatorShadow then
+                tween(indicatorShadow, {ImageTransparency = 0.6}, 0.2, Enum.EasingStyle.Quint)
+            end
             if activeGlow then
-                tween(activeGlow, {Size = UDim2.new(0, 8, 0, 28), BackgroundTransparency = 0.75}, 0.28, Enum.EasingStyle.Quint)
+                tween(activeGlow, {BackgroundTransparency = 0.75}, 0.2, Enum.EasingStyle.Quint)
             end
 
             task.delay(0.2, function()
