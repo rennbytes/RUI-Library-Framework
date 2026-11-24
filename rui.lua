@@ -5388,7 +5388,7 @@ if tabObj.Background then
         -- ---- title + note ----
         local titleLbl = mk("TextLabel", {
             Parent = card,
-            Size = UDim2.new(1, -PAD * 2 - 74, 0, 24),
+            Size = UDim2.new(1, -PAD * 2 - 96, 0, 24),
             Position = UDim2.new(0, PAD, 0, 22),
             BackgroundTransparency = 1,
             Text = gateTitle,
@@ -5404,44 +5404,67 @@ if tabObj.Background then
             Parent = card,
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -PAD, 0, 34),
-            Size = UDim2.new(0, 70, 0, 24),
+            Size = UDim2.new(0, 88, 0, 24),
             BackgroundColor3 = Theme.Themes.Default.Section,
             BorderSizePixel = 0,
-            Text = " Discord",
-            Font = Enum.Font.GothamMedium,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextColor3 = Theme.Themes.Default.SubText,
+            Text = "",
             AutoButtonColor = false
         })
         Theme:Register(discordBtn, "BackgroundColor3", "Section")
-        Theme:Register(discordBtn, "TextColor3", "SubText")
         mk("UICorner", { Parent = discordBtn, CornerRadius = UDim.new(0, 7) })
-        mk("UIPadding", { Parent = discordBtn, PaddingLeft = UDim.new(0, 8) })
-        mkIcon("discord", discordBtn, 14, "SubText", {
-            AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0, 7, 0.5, 0),
+        -- icon and text are siblings in a layout row, no glyph sitting on a label
+        local discordRow = mk("Frame", {
+            Parent = discordBtn,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1
+        })
+        mk("UIListLayout", {
+            Parent = discordRow,
+            FillDirection = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            Padding = UDim.new(0, 6)
+        })
+        mk("UIPadding", {
+            Parent = discordRow,
+            PaddingLeft = UDim.new(0, 8),
+            PaddingRight = UDim.new(0, 8)
+        })
+        mkIcon("discord", discordRow, 13, "SubText", {
+            LayoutOrder = 1,
             ImageTransparency = 0.15
         })
+        local discordLbl = mk("TextLabel", {
+            Parent = discordRow,
+            Size = UDim2.new(0, 52, 1, 0),
+            BackgroundTransparency = 1,
+            Text = "Discord",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            LayoutOrder = 2
+        })
+        Theme:Register(discordLbl, "TextColor3", "SubText")
         local discordStroke = mk("UIStroke", { Parent = discordBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(discordStroke, "Color", "Border")
         track(discordBtn.MouseEnter:Connect(function()
-            discordBtn.TextColor3 = Theme.Themes.Default.Text
+            discordLbl.TextColor3 = Theme.Themes.Default.Text
             tween(discordStroke, {Transparency = 0}, 0.15)
         end))
         track(discordBtn.MouseLeave:Connect(function()
-            discordBtn.TextColor3 = Theme.Themes.Default.SubText
+            discordLbl.TextColor3 = Theme.Themes.Default.SubText
             tween(discordStroke, {Transparency = 0.5}, 0.15)
         end))
         track(discordBtn.MouseButton1Click:Connect(function()
             if copyToClipboard(gateDiscord) then
-                discordBtn.Text = "Copied!"
+                discordLbl.Text = "Copied!"
             else
-                discordBtn.Text = "@wtf_renn"
+                discordLbl.Text = "@wtf_renn"
             end
             task.delay(1.5, function()
-                if discordBtn and discordBtn.Parent then
-                    discordBtn.Text = "Discord"
+                if discordLbl and discordLbl.Parent then
+                    discordLbl.Text = "Discord"
                 end
             end)
         end))
@@ -5539,37 +5562,57 @@ if tabObj.Background then
         local function makeGateBtn(text, width, variant, order, iconName)
             local accentBtn = variant == "Accent"
             local base = accentBtn and Theme.Themes.Default.Accent or Theme.Themes.Default.Section
-            local fg = accentBtn and Theme.Themes.Default.Background or Theme.Themes.Default.Text
             local b = mk("TextButton", {
                 Parent = btnRow,
                 Size = UDim2.new(0, width, 1, 0),
                 BackgroundColor3 = base,
                 BorderSizePixel = 0,
-                Text = iconName and (" " .. text) or text,
-                Font = Enum.Font.GothamMedium,
-                TextSize = 13,
-                TextXAlignment = iconName and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center,
-                TextColor3 = fg,
+                Text = "",
                 AutoButtonColor = false,
                 LayoutOrder = order
             })
-            if iconName then
-                mk("UIPadding", { Parent = b, PaddingLeft = UDim.new(0, 34) })
-                local gateIcon = mkIcon(iconName, b, 16, accentBtn and nil or "SubText", {
-                    AnchorPoint = Vector2.new(0, 0.5),
-                    Position = UDim2.new(0, 10, 0.5, 0),
-                    ImageTransparency = 0.1
-                })
-                if accentBtn and gateIcon then
-                    pinIconColor(gateIcon, Theme.Themes.Default.Accent)
-                end
+            local row = mk("Frame", {
+                Parent = b,
+                Size = UDim2.new(1, 0, 1, 0),
+                BackgroundTransparency = 1
+            })
+            mk("UIListLayout", {
+                Parent = row,
+                FillDirection = Enum.FillDirection.Horizontal,
+                VerticalAlignment = Enum.VerticalAlignment.Center,
+                HorizontalAlignment = Enum.HorizontalAlignment.Center,
+                Padding = UDim.new(0, 7)
+            })
+            mk("UIPadding", {
+                Parent = row,
+                PaddingLeft = UDim.new(0, 10),
+                PaddingRight = UDim.new(0, 10)
+            })
+            local gateIcon = mkIcon(iconName, row, 15, accentBtn and nil or "SubText", {
+                LayoutOrder = 1,
+                ImageTransparency = accentBtn and 0 or 0.1
+            })
+            -- on the accent button the glyph must read against the blue, not
+            -- vanish into it
+            if accentBtn and gateIcon then
+                pinIconColor(gateIcon, Theme.Themes.Default.Background)
             end
+            local label = mk("TextLabel", {
+                Parent = row,
+                Size = UDim2.new(0, width - 42, 1, 0),
+                BackgroundTransparency = 1,
+                Text = text,
+                Font = Enum.Font.GothamMedium,
+                TextSize = 13,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                LayoutOrder = 2
+            })
+            Theme:Register(label, "TextColor3", accentBtn and "Background" or "Text")
             if accentBtn then
                 Theme:Register(b, "BackgroundColor3", "Accent")
-                Theme:Register(b, "TextColor3", "Background")
             else
                 Theme:Register(b, "BackgroundColor3", "Section")
-                Theme:Register(b, "TextColor3", "Text")
             end
             mk("UICorner", { Parent = b, CornerRadius = UDim.new(0, 10) })
             local function cols()
@@ -5595,13 +5638,13 @@ if tabObj.Background then
                 local _, hover = cols()
                 tween(b, {BackgroundColor3 = hover}, 0.1)
             end))
-            return b
+            return b, label
         end
 
         -- 112 + 120 + 112 + 2*8 gaps = 360, exactly the card's inner width
         local exitBtn = makeGateBtn("Exit", 112, "Default", 1, "logout")
-        local getBtn = makeGateBtn("Get key", 120, "Default", 2, "copy")
-        local checkBtn = makeGateBtn("Submit", 112, "Accent", 3, "arrowRight")
+        local getBtn, getLbl = makeGateBtn("Get key", 120, "Default", 2, "copy")
+        local checkBtn, checkLbl = makeGateBtn("Submit", 112, "Accent", 3, "arrowRight")
 
         track(exitBtn.MouseButton1Click:Connect(function()
             -- closes the whole ui, the loader still waits on its key so
@@ -5611,8 +5654,8 @@ if tabObj.Background then
 
         local getChevron = nil
         if #validApi > 1 then
-            getBtn.TextXAlignment = Enum.TextXAlignment.Left
-            mk("UIPadding", { Parent = getBtn, PaddingLeft = UDim.new(0, 34), PaddingRight = UDim.new(0, 28) })
+            -- leave room on the right for the picker chevron
+            getLbl.Size = UDim2.new(0, 58, 1, 0)
             getChevron = mkIcon("chevronDown", getBtn, 12, "SubText", {
                 AnchorPoint = Vector2.new(1, 0.5),
                 Position = UDim2.new(1, -10, 0.5, 0)
@@ -5745,7 +5788,7 @@ if tabObj.Background then
             end
 
             checking = true
-            checkBtn.Text = "Checking..."
+            checkLbl.Text = "Checking..."
             sayGate("Talking to the key server...", "SubText")
 
             -- verification can block on http so keep it off the ui thread,
@@ -5777,7 +5820,7 @@ if tabObj.Background then
 
                 checking = false
                 if checkBtn.Parent then
-                    checkBtn.Text = "Submit"
+                    checkLbl.Text = "Submit"
                 end
 
                 if not reached then
