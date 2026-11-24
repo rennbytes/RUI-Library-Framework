@@ -3953,6 +3953,7 @@ function Library:CreateWindow(options)
         -- sayGate is used by the rows below, so declare it first
         local sayGate = nil
         local gateTitle = keyOpts.Title or title
+        local gateDiscord = keyOpts.Discord or "https://discord.com/users/619377179318288384"
 
         -- only lists services that are actually registered
         local validApi = {}
@@ -4013,7 +4014,7 @@ function Library:CreateWindow(options)
         -- ---- title + note ----
         local titleLbl = mk("TextLabel", {
             Parent = card,
-            Size = UDim2.new(1, -PAD * 2, 0, 24),
+            Size = UDim2.new(1, -PAD * 2 - 74, 0, 24),
             Position = UDim2.new(0, PAD, 0, 22),
             BackgroundTransparency = 1,
             Text = gateTitle,
@@ -4023,6 +4024,46 @@ function Library:CreateWindow(options)
             TextTruncate = Enum.TextTruncate.AtEnd
         })
         Theme:Register(titleLbl, "TextColor3", "Text")
+
+        -- discord copy sitting on the header line, same row as the title
+        local discordBtn = mk("TextButton", {
+            Parent = card,
+            AnchorPoint = Vector2.new(1, 0.5),
+            Position = UDim2.new(1, -PAD, 0, 34),
+            Size = UDim2.new(0, 70, 0, 24),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0,
+            Text = "Discord",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 12,
+            TextColor3 = Theme.Themes.Default.SubText,
+            AutoButtonColor = false
+        })
+        Theme:Register(discordBtn, "BackgroundColor3", "Section")
+        Theme:Register(discordBtn, "TextColor3", "SubText")
+        mk("UICorner", { Parent = discordBtn, CornerRadius = UDim.new(0, 7) })
+        local discordStroke = mk("UIStroke", { Parent = discordBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        Theme:Register(discordStroke, "Color", "Border")
+        track(discordBtn.MouseEnter:Connect(function()
+            discordBtn.TextColor3 = Theme.Themes.Default.Text
+            tween(discordStroke, {Transparency = 0}, 0.15)
+        end))
+        track(discordBtn.MouseLeave:Connect(function()
+            discordBtn.TextColor3 = Theme.Themes.Default.SubText
+            tween(discordStroke, {Transparency = 0.5}, 0.15)
+        end))
+        track(discordBtn.MouseButton1Click:Connect(function()
+            if copyToClipboard(gateDiscord) then
+                discordBtn.Text = "Copied!"
+            else
+                discordBtn.Text = "@wtf_renn"
+            end
+            task.delay(1.5, function()
+                if discordBtn and discordBtn.Parent then
+                    discordBtn.Text = "Discord"
+                end
+            end)
+        end))
 
         local note = mk("TextLabel", {
             Parent = card,
@@ -4050,6 +4091,7 @@ function Library:CreateWindow(options)
             TextSize = 14,
             TextColor3 = Theme.Themes.Default.Text,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
             ClearTextOnFocus = false
         })
         Theme:Register(box, "BackgroundColor3", "Section")
@@ -4184,9 +4226,10 @@ function Library:CreateWindow(options)
             return b
         end
 
-        local exitBtn = makeGateBtn("Exit", 92, "Default", 1)
-        local getBtn = makeGateBtn("Get key", 132, "Default", 2)
-        local checkBtn = makeGateBtn("Submit", 96, "Accent", 3)
+        -- 112 + 120 + 112 + 2*8 gaps = 360, exactly the card's inner width
+        local exitBtn = makeGateBtn("Exit", 112, "Default", 1)
+        local getBtn = makeGateBtn("Get key", 120, "Default", 2)
+        local checkBtn = makeGateBtn("Submit", 112, "Accent", 3)
 
         track(exitBtn.MouseButton1Click:Connect(function()
             -- closes the whole ui, the loader still waits on its key so
