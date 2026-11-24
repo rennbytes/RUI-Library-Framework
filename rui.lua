@@ -253,6 +253,71 @@ function Theme:SetTheme(name)
     end
 end
 
+-- lucide icons, public assets from Footagesus' pack. swap any of these through
+-- RUI:SetIcon(name, id) when u upload ur own sheet or individual decals
+local ICONS = {
+    key = "rbxassetid://96510194465420",
+    keyRound = "rbxassetid://83619031955390",
+    copy = "rbxassetid://78979572434545",
+    logout = "rbxassetid://84895399304975",
+    arrowRight = "rbxassetid://113692007244654",
+    chevronDown = "rbxassetid://134243273101015",
+    discord = "rbxassetid://127255077587058",
+    info = "rbxassetid://124560466474914",
+    sparkles = "rbxassetid://138635884129147",
+    warning = "rbxassetid://125920361880643",
+    error = "rbxassetid://76821953846248",
+    success = "rbxassetid://93202927221730",
+    check = "rbxassetid://93898873302694",
+    home = "rbxassetid://98755624629571",
+    server = "rbxassetid://92188766517878",
+    settings = "rbxassetid://80758916183665",
+    palette = "rbxassetid://86350350950064",
+    search = "rbxassetid://121018724060431",
+    refresh = "rbxassetid://138133190015277",
+    bell = "rbxassetid://97392696311902",
+    lock = "rbxassetid://134724289526879",
+    user = "rbxassetid://81589895647169",
+    users = "rbxassetid://115398113982385",
+    sliders = "rbxassetid://85538382643347",
+    keyboard = "rbxassetid://121474456068237",
+    text = "rbxassetid://133543553793564",
+    list = "rbxassetid://113179976918783",
+    shield = "rbxassetid://87354736164608",
+    file = "rbxassetid://90496405707281",
+    folder = "rbxassetid://80846616596607",
+    bolt = "rbxassetid://102881251417484",
+    star = "rbxassetid://136141469398409",
+    link = "rbxassetid://131607023382430",
+    globe = "rbxassetid://114238209622913"
+}
+
+-- makes an ImageLabel from a registered icon. table values support a sheet:
+-- {Image = id, Offset = Vector2, Size = Vector2}
+local function mkIcon(name, parent, size, themeKey, props)
+    local id = ICONS[name]
+    if not id then return nil end
+    local image = type(id) == "table" and id.Image or id
+    local img = mk("ImageLabel", {
+        Parent = parent,
+        Size = UDim2.new(0, size, 0, size),
+        BackgroundTransparency = 1,
+        Image = image,
+        ImageRectOffset = type(id) == "table" and id.Offset or nil,
+        ImageRectSize = type(id) == "table" and id.Size or nil,
+        ScaleType = Enum.ScaleType.Fit,
+        ImageColor3 = Theme.Themes.Default[themeKey or "Text"],
+        ImageTransparency = 0
+    })
+    for k, v in pairs(props or {}) do
+        img[k] = v
+    end
+    if themeKey and Theme.Themes.Default[themeKey] then
+        Theme:Register(img, "ImageColor3", themeKey)
+    end
+    return img
+end
+
 -- only one thing drags at a time, the topbar and the bottom bar both move the
 -- window so without this they fight each other
 local activeDrag = nil
@@ -315,6 +380,15 @@ local NOTIF_COLORS = {
     warning = Color3.fromRGB(255, 185, 65),
     error = Color3.fromRGB(255, 95, 95),
     success = Color3.fromRGB(80, 215, 130)
+}
+
+local NOTIF_ICONS = {
+    normal = "info",
+    info = "info",
+    event = "sparkles",
+    warning = "warning",
+    error = "error",
+    success = "success"
 }
 
 local notifs = {
@@ -392,7 +466,11 @@ function notifs:dismiss(notifData)
     tween(notifData.DescLbl, {TextTransparency = 1}, 0.2)
     tween(notifData.BarBg, {BackgroundTransparency = 1}, 0.2)
     tween(notifData.Bar, {BackgroundTransparency = 1}, 0.2)
-    tween(notifData.AccentBar, {BackgroundTransparency = 1}, 0.2)
+    if notifData.AccentBar:IsA("ImageLabel") then
+        tween(notifData.AccentBar, {ImageTransparency = 1}, 0.2)
+    else
+        tween(notifData.AccentBar, {BackgroundTransparency = 1}, 0.2)
+    end
     tween(notifData.CloseBtn, {TextTransparency = 1, BackgroundTransparency = 1}, 0.2)
     tween(notif, {BackgroundTransparency = 1}, 0.2)
     local stroke = notif:FindFirstChildOfClass("UIStroke")
@@ -482,15 +560,19 @@ function notifs:showNotif(title, desc, duration, kind, long)
     
     addShadow(notif, 0.4, 15)
     
-    local dot = mk("Frame", {
+    local iconName = NOTIF_ICONS[tostring(kind or "normal"):lower()] or "info"
+    local dot = mkIcon(iconName, notif, 16, nil, {
+        Position = UDim2.new(0, 10, 0, 11),
+        ImageColor3 = accent,
+        ImageTransparency = 1
+    }) or mk("Frame", {
         Parent = notif,
         Position = UDim2.new(0, 12, 0, 15),
         Size = UDim2.new(0, 8, 0, 8),
         BackgroundTransparency = 1,
-        BorderSizePixel = 0
+        BorderSizePixel = 0,
+        BackgroundColor3 = accent
     })
-    dot.BackgroundColor3 = accent
-    mk("UICorner", {Parent = dot, CornerRadius = UDim.new(1, 0)})
     
     -- measure against the container width BEFORE building the labels, otherwise
     -- TextWrapped never gets a tall enough box and long text stays on one line
@@ -603,7 +685,11 @@ function notifs:showNotif(title, desc, duration, kind, long)
     tween(descLbl, {TextTransparency = 0}, 0.3)
     tween(barBg, {BackgroundTransparency = 0.5}, 0.3)
     tween(bar, {BackgroundTransparency = 0}, 0.3)
-    tween(dot, {BackgroundTransparency = 0}, 0.3)
+    if dot:IsA("ImageLabel") then
+        tween(dot, {ImageTransparency = 0}, 0.3)
+    else
+        tween(dot, {BackgroundTransparency = 0}, 0.3)
+    end
     tween(closeBtn, {TextTransparency = 0}, 0.3)
     tween(stroke, {Transparency = 0.5}, 0.3)
     
@@ -840,6 +926,24 @@ function Library:AddTheme(name, colors)
 end
 
 -- ---- key services ----
+
+function Library:SetIcon(name, id)
+    if type(name) ~= "string" then return false end
+    ICONS[name] = id
+    return true
+end
+
+function Library:AddIcons(tbl)
+    if type(tbl) ~= "table" then return false end
+    for name, id in pairs(tbl) do
+        ICONS[name] = id
+    end
+    return true
+end
+
+function Library:GetIcon(name)
+    return ICONS[name]
+end
 
 function Library:RegisterService(name, def)
     if type(name) ~= "string" or type(def) ~= "table" then return false end
@@ -2167,12 +2271,12 @@ function Library:CreateWindow(options)
         end
     end))
     
-    function windowObj:CreateTab(name, layoutOrder, customBuild)
+    function windowObj:CreateTab(name, layoutOrder, customBuild, iconName)
         local tabBtn = mk("TextButton", {
             Parent = tabList,
             Size = UDim2.new(1, -20, 0, 32),
             BackgroundTransparency = 1,
-            Text = name,
+            Text = iconName and (" " .. name) or name,
             Font = Enum.Font.GothamMedium,
             TextSize = 13,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -2183,7 +2287,13 @@ function Library:CreateWindow(options)
         if not layoutOrder then
             windowObj.nextOrder = windowObj.nextOrder + 1
         end
-        mk("UIPadding", {Parent = tabBtn, PaddingLeft = UDim.new(0, 15)})
+        mk("UIPadding", {Parent = tabBtn, PaddingLeft = UDim.new(0, iconName and 32 or 15)})
+        if iconName then
+            mkIcon(iconName, tabBtn, 14, "SubText", {
+                Position = UDim2.new(0, 9, 0.5, -7),
+                ImageTransparency = 0.1
+            })
+        end
         mk("UICorner", {Parent = tabBtn, CornerRadius = UDim.new(0, 6)})
         Theme:Register(tabBtn, "TextColor3", "SubText")
 
@@ -2287,13 +2397,19 @@ function Library:CreateWindow(options)
                     Parent = secFrame,
                     Size = UDim2.new(1, 0, 0, 24),
                     BackgroundTransparency = 1,
-                    Text = secDef.Name,
+                    Text = secDef.Icon and (" " .. secDef.Name) or secDef.Name,
                     Font = Enum.Font.GothamBold,
                     TextSize = 14,
                     TextStrokeTransparency = 1,
                     TextXAlignment = Enum.TextXAlignment.Left
                 })
                 Theme:Register(secTitle, "TextColor3", "Text")
+                if secDef.Icon then
+                    mkIcon(secDef.Icon, secFrame, 14, "Accent", {
+                        Position = UDim2.new(0, 0, 0, 5),
+                        ImageTransparency = 0.1
+                    })
+                end
                 
                 local divider = mk("Frame", {
                     Parent = secFrame,
@@ -2312,7 +2428,8 @@ function Library:CreateWindow(options)
                         })
                         local lbl = mk("TextLabel", {
                             Parent = lblFrame,
-                            Size = UDim2.new(1, 0, 0, 18),
+                            Size = UDim2.new(1, compDef.Icon and -22 or 0, 0, 18),
+                            Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
@@ -2321,11 +2438,17 @@ function Library:CreateWindow(options)
                             TextTruncate = Enum.TextTruncate.AtEnd
                         })
                         Theme:Register(lbl, "TextColor3", "Text")
+                        if compDef.Icon then
+                            mkIcon(compDef.Icon, lblFrame, 14, "SubText", {
+                                Position = UDim2.new(0, 0, 0, 2),
+                                ImageTransparency = 0.1
+                            })
+                        end
                         if compDef.Desc then
                             local desc = mk("TextLabel", {
                                 Parent = lblFrame,
-                                Size = UDim2.new(1, 0, 0, 16),
-                                Position = UDim2.new(0, 0, 0, 20),
+                                Size = UDim2.new(1, compDef.Icon and -22 or 0, 0, 16),
+                                Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 20),
                                 BackgroundTransparency = 1,
                                 Text = compDef.Desc,
                                 Font = Enum.Font.GothamMedium,
@@ -2363,11 +2486,19 @@ function Library:CreateWindow(options)
                             Size = UDim2.new(1, 0, 0, 32),
                             BackgroundColor3 = baseCol,
                             AutoButtonColor = false,
-                            Text = compDef.Name,
+                            Text = compDef.Icon and (" " .. compDef.Name) or compDef.Name,
+                            TextXAlignment = compDef.Icon and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center,
                             Font = Enum.Font.GothamMedium,
                             TextSize = 13,
                             TextColor3 = variant == "Accent" and Theme.Themes.Default.Background or Theme.Themes.Default.Text
                         })
+                        if compDef.Icon then
+                            mk("UIPadding", { Parent = btn, PaddingLeft = UDim.new(0, 32) })
+                            mkIcon(compDef.Icon, btn, 14, variant == "Accent" and "Background" or "Text", {
+                                Position = UDim2.new(0, 10, 0.5, -7),
+                                ImageTransparency = 0.1
+                            })
+                        end
                         if variant == "Accent" then
                             Theme:Register(btn, "BackgroundColor3", "Accent")
                             Theme:Register(btn, "TextColor3", "Background")
@@ -2413,7 +2544,8 @@ function Library:CreateWindow(options)
                          })
                          local lbl = mk("TextLabel", {
                              Parent = tglFrame,
-                             Size = UDim2.new(1, -60, 1, 0),
+                             Size = UDim2.new(1, compDef.Icon and -80 or -60, 1, 0),
+                             Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                              BackgroundTransparency = 1,
                              Text = compDef.Name,
                              Font = Enum.Font.GothamMedium,
@@ -2421,6 +2553,12 @@ function Library:CreateWindow(options)
                              TextXAlignment = Enum.TextXAlignment.Left
                          })
                          Theme:Register(lbl, "TextColor3", "SubText")
+                         if compDef.Icon then
+                             mkIcon(compDef.Icon, tglFrame, 14, "SubText", {
+                                 Position = UDim2.new(0, 0, 0.5, -7),
+                                 ImageTransparency = 0.1
+                             })
+                         end
 
                          local boxHeight = 22
                          local boxWidth = 42
@@ -2527,8 +2665,8 @@ function Library:CreateWindow(options)
                         })
                         local lbl = mk("TextLabel", {
                             Parent = sldFrame,
-                            Size = UDim2.new(1, -50, 0, 20),
-                            Position = UDim2.new(0, 0, 0, 0),
+                            Size = UDim2.new(1, compDef.Icon and -72 or -50, 0, 20),
+                            Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
@@ -2536,6 +2674,12 @@ function Library:CreateWindow(options)
                             TextXAlignment = Enum.TextXAlignment.Left
                         })
                         Theme:Register(lbl, "TextColor3", "Text")
+                        if compDef.Icon then
+                            mkIcon(compDef.Icon, sldFrame, 14, "Text", {
+                                Position = UDim2.new(0, 0, 0, 3),
+                                ImageTransparency = 0.1
+                            })
+                        end
 
                         local valLbl = mk("TextLabel", {
                             Parent = sldFrame,
@@ -2768,7 +2912,8 @@ function Library:CreateWindow(options)
                         end))
                         local lbl = mk("TextLabel", {
                             Parent = dpFrame,
-                            Size = UDim2.new(1, 0, 0, 20),
+                            Size = UDim2.new(1, compDef.Icon and -22 or 0, 0, 20),
+                            Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
@@ -2776,6 +2921,12 @@ function Library:CreateWindow(options)
                             TextXAlignment = Enum.TextXAlignment.Left
                         })
                         Theme:Register(lbl, "TextColor3", "Text")
+                        if compDef.Icon then
+                            mkIcon(compDef.Icon, dpFrame, 14, "Text", {
+                                Position = UDim2.new(0, 0, 0, 3),
+                                ImageTransparency = 0.1
+                            })
+                        end
 
                         local boxHeight = 28
                         local box = mk("TextButton", {
@@ -2945,7 +3096,8 @@ function Library:CreateWindow(options)
                         })
                         local lbl = mk("TextLabel", {
                             Parent = inpFrame,
-                            Size = UDim2.new(1, 0, 0, 18),
+                            Size = UDim2.new(1, compDef.Icon and -22 or 0, 0, 18),
+                            Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
@@ -2953,6 +3105,12 @@ function Library:CreateWindow(options)
                             TextXAlignment = Enum.TextXAlignment.Left
                         })
                         Theme:Register(lbl, "TextColor3", "Text")
+                        if compDef.Icon then
+                            mkIcon(compDef.Icon, inpFrame, 14, "Text", {
+                                Position = UDim2.new(0, 0, 0, 2),
+                                ImageTransparency = 0.1
+                            })
+                        end
 
                         local iValue = flagStart(compDef, compDef.Default or "")
                         local inp = mk("TextBox", {
@@ -3008,7 +3166,8 @@ function Library:CreateWindow(options)
                         })
                         local lbl = mk("TextLabel", {
                             Parent = kbFrame,
-                            Size = UDim2.new(1, -100, 1, 0),
+                            Size = UDim2.new(1, compDef.Icon and -122 or -100, 1, 0),
+                            Position = UDim2.new(0, compDef.Icon and 22 or 0, 0, 0),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
@@ -3017,6 +3176,12 @@ function Library:CreateWindow(options)
                             TextTruncate = Enum.TextTruncate.AtEnd
                         })
                         Theme:Register(lbl, "TextColor3", "SubText")
+                        if compDef.Icon then
+                            mkIcon(compDef.Icon, kbFrame, 14, "SubText", {
+                                Position = UDim2.new(0, 0, 0.5, -7),
+                                ImageTransparency = 0.1
+                            })
+                        end
 
                         local kbValue = flagStart(compDef, compDef.Default)
                         local listening = false
@@ -3102,55 +3267,55 @@ function Library:CreateWindow(options)
         end
         
         -- sections just save what to build, tab builds on first click
-        function tabObj:CreateSection(secName)
-            local secDef = {Name = secName, Components = {}}
+        function tabObj:CreateSection(secName, iconName)
+            local secDef = {Name = secName, Components = {}, Icon = iconName}
             table.insert(tabObj.SectionDefs, secDef)
             
             local secMethods = {}
             
-            function secMethods:CreateButton(btnName, callback, variant)
-                table.insert(secDef.Components, {Type = "Button", Name = btnName, Callback = callback, Variant = variant or "Default"})
+            function secMethods:CreateButton(btnName, callback, variant, iconName)
+                table.insert(secDef.Components, {Type = "Button", Name = btnName, Callback = callback, Variant = variant or "Default", Icon = iconName})
             end
 
             -- just text, no state, nothing to save
-            function secMethods:CreateLabel(lblText, desc)
-                table.insert(secDef.Components, {Type = "Label", Name = lblText, Desc = desc})
+            function secMethods:CreateLabel(lblText, desc, iconName)
+                table.insert(secDef.Components, {Type = "Label", Name = lblText, Desc = desc, Icon = iconName})
             end
 
             function secMethods:CreateDivider()
                 table.insert(secDef.Components, {Type = "Divider"})
             end
 
-            function secMethods:CreateInput(inpName, default, placeholder, callback, flagName)
+            function secMethods:CreateInput(inpName, default, placeholder, callback, flagName, iconName)
                 if not flagName then flagName = nextFlag() end
                 registerFlag(flagName, default or "", "Input")
-                table.insert(secDef.Components, {Type = "Input", Name = inpName, Default = default or "", Placeholder = placeholder, Callback = callback, Flag = flagName})
+                table.insert(secDef.Components, {Type = "Input", Name = inpName, Default = default or "", Placeholder = placeholder, Callback = callback, Flag = flagName, Icon = iconName})
             end
 
-            function secMethods:CreateKeybind(kbName, default, callback, flagName)
+            function secMethods:CreateKeybind(kbName, default, callback, flagName, iconName)
                 if not flagName then flagName = nextFlag() end
                 registerFlag(flagName, default, "Keybind")
-                table.insert(secDef.Components, {Type = "Keybind", Name = kbName, Default = default, Callback = callback, Flag = flagName})
+                table.insert(secDef.Components, {Type = "Keybind", Name = kbName, Default = default, Callback = callback, Flag = flagName, Icon = iconName})
             end
 
-            function secMethods:CreateToggle(tglName, default, callback, flagName)
+            function secMethods:CreateToggle(tglName, default, callback, flagName, iconName)
                 if not flagName then flagName = nextFlag() end
                 registerFlag(flagName, default, "Toggle")
-                table.insert(secDef.Components, {Type = "Toggle", Name = tglName, Default = default, Callback = callback, Flag = flagName})
+                table.insert(secDef.Components, {Type = "Toggle", Name = tglName, Default = default, Callback = callback, Flag = flagName, Icon = iconName})
             end
 
-            function secMethods:CreateSlider(sldName, min, max, default, callback, flagName)
+            function secMethods:CreateSlider(sldName, min, max, default, callback, flagName, iconName)
                 if not flagName then flagName = nextFlag() end
                 registerFlag(flagName, default, "Slider")
                 flagDefs[flagName].Min = min
                 flagDefs[flagName].Max = max
-                table.insert(secDef.Components, {Type = "Slider", Name = sldName, Min = min, Max = max, Default = default, Callback = callback, Flag = flagName})
+                table.insert(secDef.Components, {Type = "Slider", Name = sldName, Min = min, Max = max, Default = default, Callback = callback, Flag = flagName, Icon = iconName})
             end
 
-            function secMethods:CreateDropdown(dpName, items, default, callback, flagName)
+            function secMethods:CreateDropdown(dpName, items, default, callback, flagName, iconName)
                 if not flagName then flagName = nextFlag() end
                 registerFlag(flagName, default, "Dropdown")
-                table.insert(secDef.Components, {Type = "Dropdown", Name = dpName, Items = items, Default = default, Callback = callback, Flag = flagName})
+                table.insert(secDef.Components, {Type = "Dropdown", Name = dpName, Items = items, Default = default, Callback = callback, Flag = flagName, Icon = iconName})
             end
             
             return secMethods
@@ -4033,15 +4198,21 @@ function Library:CreateWindow(options)
             Size = UDim2.new(0, 70, 0, 24),
             BackgroundColor3 = Theme.Themes.Default.Section,
             BorderSizePixel = 0,
-            Text = "Discord",
+            Text = " Discord",
             Font = Enum.Font.GothamMedium,
             TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left,
             TextColor3 = Theme.Themes.Default.SubText,
             AutoButtonColor = false
         })
         Theme:Register(discordBtn, "BackgroundColor3", "Section")
         Theme:Register(discordBtn, "TextColor3", "SubText")
         mk("UICorner", { Parent = discordBtn, CornerRadius = UDim.new(0, 7) })
+        mk("UIPadding", { Parent = discordBtn, PaddingLeft = UDim.new(0, 8) })
+        mkIcon("discord", discordBtn, 14, "SubText", {
+            Position = UDim2.new(0, 7, 0.5, -7),
+            ImageTransparency = 0.15
+        })
         local discordStroke = mk("UIStroke", { Parent = discordBtn, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(discordStroke, "Color", "Border")
         track(discordBtn.MouseEnter:Connect(function()
@@ -4102,33 +4273,10 @@ function Library:CreateWindow(options)
         local boxStroke = mk("UIStroke", { Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(boxStroke, "Color", "Border")
 
-        local keyRing = mk("Frame", {
-            Parent = box,
-            Size = UDim2.new(0, 10, 0, 10),
-            Position = UDim2.new(0, 14, 0.5, -5),
-            BackgroundTransparency = 1
+        mkIcon("key", box, 18, "SubText", {
+            Position = UDim2.new(0, 12, 0.5, -9),
+            ImageTransparency = 0.15
         })
-        mk("UICorner", { Parent = keyRing, CornerRadius = UDim.new(1, 0) })
-        local keyRingStroke = mk("UIStroke", { Parent = keyRing, Thickness = 1.5, Color = Theme.Themes.Default.SubText, Transparency = 0.35 })
-        Theme:Register(keyRingStroke, "Color", "SubText")
-        local keyStem = mk("Frame", {
-            Parent = box,
-            Size = UDim2.new(0, 11, 0, 2),
-            Position = UDim2.new(0, 23, 0.5, -1),
-            BackgroundColor3 = Theme.Themes.Default.SubText,
-            BackgroundTransparency = 0.35,
-            BorderSizePixel = 0
-        })
-        Theme:Register(keyStem, "BackgroundColor3", "SubText")
-        local keyTooth = mk("Frame", {
-            Parent = box,
-            Size = UDim2.new(0, 2, 0, 5),
-            Position = UDim2.new(0, 31, 0.5, 1),
-            BackgroundColor3 = Theme.Themes.Default.SubText,
-            BackgroundTransparency = 0.35,
-            BorderSizePixel = 0
-        })
-        Theme:Register(keyTooth, "BackgroundColor3", "SubText")
 
         track(box.Focused:Connect(function()
             tween(boxStroke, {Color = Theme.Themes.Default.Accent, Transparency = 0}, 0.15)
@@ -4177,7 +4325,7 @@ function Library:CreateWindow(options)
             HorizontalAlignment = Enum.HorizontalAlignment.Left
         })
 
-        local function makeGateBtn(text, width, variant, order)
+        local function makeGateBtn(text, width, variant, order, iconName)
             local accentBtn = variant == "Accent"
             local base = accentBtn and Theme.Themes.Default.Accent or Theme.Themes.Default.Section
             local fg = accentBtn and Theme.Themes.Default.Background or Theme.Themes.Default.Text
@@ -4186,13 +4334,21 @@ function Library:CreateWindow(options)
                 Size = UDim2.new(0, width, 1, 0),
                 BackgroundColor3 = base,
                 BorderSizePixel = 0,
-                Text = text,
+                Text = iconName and (" " .. text) or text,
                 Font = Enum.Font.GothamMedium,
                 TextSize = 13,
+                TextXAlignment = iconName and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center,
                 TextColor3 = fg,
                 AutoButtonColor = false,
                 LayoutOrder = order
             })
+            if iconName then
+                mk("UIPadding", { Parent = b, PaddingLeft = UDim.new(0, 34) })
+                mkIcon(iconName, b, 16, accentBtn and "Background" or "SubText", {
+                    Position = UDim2.new(0, 11, 0.5, -8),
+                    ImageTransparency = 0.1
+                })
+            end
             if accentBtn then
                 Theme:Register(b, "BackgroundColor3", "Accent")
                 Theme:Register(b, "TextColor3", "Background")
@@ -4228,9 +4384,9 @@ function Library:CreateWindow(options)
         end
 
         -- 112 + 120 + 112 + 2*8 gaps = 360, exactly the card's inner width
-        local exitBtn = makeGateBtn("Exit", 112, "Default", 1)
-        local getBtn = makeGateBtn("Get key", 120, "Default", 2)
-        local checkBtn = makeGateBtn("Submit", 112, "Accent", 3)
+        local exitBtn = makeGateBtn("Exit", 112, "Default", 1, "logout")
+        local getBtn = makeGateBtn("Get key", 120, "Default", 2, "copy")
+        local checkBtn = makeGateBtn("Submit", 112, "Accent", 3, "arrowRight")
 
         track(exitBtn.MouseButton1Click:Connect(function()
             -- closes the whole ui, the loader still waits on its key so
@@ -4241,20 +4397,11 @@ function Library:CreateWindow(options)
         local getChevron = nil
         if #validApi > 1 then
             getBtn.TextXAlignment = Enum.TextXAlignment.Left
-            mk("UIPadding", { Parent = getBtn, PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 28) })
-            getChevron = mk("TextLabel", {
-                Parent = getBtn,
+            mk("UIPadding", { Parent = getBtn, PaddingLeft = UDim.new(0, 34), PaddingRight = UDim.new(0, 28) })
+            getChevron = mkIcon("chevronDown", getBtn, 12, "SubText", {
                 AnchorPoint = Vector2.new(1, 0.5),
-                Position = UDim2.new(1, -12, 0.5, 0),
-                Size = UDim2.new(0, 14, 1, 0),
-                BackgroundTransparency = 1,
-                Text = "▼",
-                Font = Enum.Font.Gotham,
-                TextSize = 10,
-                TextXAlignment = Enum.TextXAlignment.Center,
-                TextYAlignment = Enum.TextYAlignment.Center
+                Position = UDim2.new(1, -10, 0.5, -6)
             })
-            Theme:Register(getChevron, "TextColor3", "SubText")
         end
 
         local saveToggleOn = saveKey
@@ -4500,11 +4647,11 @@ function Library:CreateWindow(options)
 
     -- home is pinned to the very top, servers/customize/settings to the very
     -- bottom, user tabs land in between (nextOrder starts at 10)
-    local homeTab = windowObj:CreateTab("Home", 1, BuildHomeTab)
-    local serversTab = windowObj:CreateTab("Servers", 100, BuildServersTab)
+    local homeTab = windowObj:CreateTab("Home", 1, BuildHomeTab, "home")
+    local serversTab = windowObj:CreateTab("Servers", 100, BuildServersTab, "server")
 
     -- customize tab
-    local customizeTab = windowObj:CreateTab("Customize", 101)
+    local customizeTab = windowObj:CreateTab("Customize", 101, nil, "palette")
     local displaySec = customizeTab:CreateSection("Display")
     displaySec:CreateSlider("UI Opacity", 20, 100, 90, function(val)
         windowObj.UserOpacity = 1 - (val / 100)
@@ -4569,7 +4716,7 @@ function Library:CreateWindow(options)
     end
 
     -- settings tab
-    local settingsTab = windowObj:CreateTab("Settings", 102)
+    local settingsTab = windowObj:CreateTab("Settings", 102, nil, "settings")
     local uiSec = settingsTab:CreateSection("Settings")
 
     -- anti afk, clicks when idle so u dont get kicked
