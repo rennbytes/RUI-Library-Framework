@@ -2631,10 +2631,30 @@ function Library:CreateWindow(options)
         -- icon and label are real children so they can be laid out properly.
         -- UIPadding never affected the button's own Text, which is why the
         -- old version drew glyphs on top of the first letter
-        local row = mk("Frame", {
+        -- layered tab body: dark fill + faint outline, same idea WindUI uses
+    local tabBg = mk("Frame", {
+        Parent = tabBtn,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Theme.Themes.Default.Section,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 0
+    })
+    Theme:Register(tabBg, "BackgroundColor3", "Section")
+    mk("UICorner", {Parent = tabBg, CornerRadius = UDim.new(0, 8)})
+    local tabOutline = mk("UIStroke", {
+        Parent = tabBg,
+        Thickness = 1,
+        Color = Theme.Themes.Default.Accent,
+        Transparency = 1
+    })
+    Theme:Register(tabOutline, "Color", "Accent")
+
+    local row = mk("Frame", {
             Parent = tabBtn,
             Size = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1
+            BackgroundTransparency = 1,
+            ZIndex = 1
         })
         mk("UIListLayout", {
             Parent = row,
@@ -2646,7 +2666,7 @@ function Library:CreateWindow(options)
         })
         mk("UIPadding", {
             Parent = row,
-            PaddingLeft = UDim.new(0, 14),
+            PaddingLeft = UDim.new(0, 32),
             PaddingRight = UDim.new(0, 8)
         })
 
@@ -2671,37 +2691,35 @@ function Library:CreateWindow(options)
         Theme:Register(tabLabel, "TextColor3", "SubText")
         mk("UICorner", {Parent = tabBtn, CornerRadius = UDim.new(0, 6)})
 
-        -- active rail: a tight accent capsule with a soft glow behind it, sitting
-    -- just outside the tab edge instead of flat against the text
-    local activeGlow = mk("Frame", {
-        Parent = tabBtn,
-        Size = UDim2.new(0, 8, 0, 28),
-        Position = UDim2.new(0, -9, 0.5, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundTransparency = 1
-    })
-    Theme:Register(activeGlow, "BackgroundColor3", "Accent")
-    mk("UICorner", {Parent = activeGlow, CornerRadius = UDim.new(1, 0)})
+        track(tabBtn.MouseEnter:Connect(function()
+            if windowObj.CurrentTab == tabObj then return end
+            tween(tabBg, {BackgroundTransparency = 0.6, BackgroundColor3 = Theme.Themes.Default.Hover}, 0.15)
+        end))
+        track(tabBtn.MouseLeave:Connect(function()
+            if windowObj.CurrentTab == tabObj then return end
+            tween(tabBg, {BackgroundTransparency = 1, BackgroundColor3 = Theme.Themes.Default.Section}, 0.15)
+        end))
 
-    local activeIndicator = mk("Frame", {
+        -- active capsule sits inside the tab background, like the windui tab glow
+    local activeCapsule = mk("Frame", {
         Parent = tabBtn,
-        Size = UDim2.new(0, 3, 0, 22),
-        Position = UDim2.new(0, -9, 0.5, 0),
+        Size = UDim2.new(0, 7, 0, 20),
+        Position = UDim2.new(0, 14, 0.5, 0),
         AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundTransparency = 1
+        BackgroundTransparency = 1,
+        ZIndex = 2
     })
-    Theme:Register(activeIndicator, "BackgroundColor3", "Accent")
-    mk("UICorner", {Parent = activeIndicator, CornerRadius = UDim.new(1, 0)})
-    local indicatorShadow = addShadow(activeIndicator, 1, 6)
+    Theme:Register(activeCapsule, "BackgroundColor3", "Accent")
+    mk("UICorner", {Parent = activeCapsule, CornerRadius = UDim.new(1, 0)})
 
         local tabObj = {
             Name = name,
             Button = tabBtn,
             Label = tabLabel,
             Icon = tabIcon,
-            Indicator = activeIndicator,
-            IndicatorShadow = indicatorShadow,
-            Glow = activeGlow,
+            Background = tabBg,
+            Outline = tabOutline,
+            Capsule = activeCapsule,
             SectionDefs = {},
             ContentRoot = nil,
             ContentLayout = nil,
@@ -3731,18 +3749,30 @@ function Library:CreateWindow(options)
             oldTab.ContentRoot.Visible = false
         end
     end)
-                Theme:Register(oldTab.Label, "TextColor3", "SubText")
+                local dimText = Theme.Themes.Default.SubText
+                tween(oldTab.Label, {TextColor3 = dimText}, 0.15)
+                task.delay(0.15, function()
+                    if oldTab.Label and oldTab.Label.Parent then
+                        Theme:Register(oldTab.Label, "TextColor3", "SubText")
+                    end
+                end)
                 if oldTab.Icon then
-                    Theme:Register(oldTab.Icon, "ImageColor3", "SubText")
+                    tween(oldTab.Icon, {ImageColor3 = dimText}, 0.15)
+                    task.delay(0.15, function()
+                        if oldTab.Icon and oldTab.Icon.Parent then
+                            Theme:Register(oldTab.Icon, "ImageColor3", "SubText")
+                        end
+                    end)
                 end
-                tween(oldTab.Button, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
-                -- rail fades with the body instead of shrinking away
-                tween(oldTab.Indicator, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
-                if oldTab.IndicatorShadow then
-                    tween(oldTab.IndicatorShadow, {ImageTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
+                tween(oldTab.Button, {BackgroundTransparency = 1}, 0.15)
+                if oldTab.Background then
+                    tween(oldTab.Background, {BackgroundTransparency = 1}, 0.15)
                 end
-                if oldTab.Glow then
-                    tween(oldTab.Glow, {BackgroundTransparency = 1}, 0.2, Enum.EasingStyle.Quint)
+                if oldTab.Outline then
+                    tween(oldTab.Outline, {Transparency = 1}, 0.15)
+                end
+                if oldTab.Capsule then
+                    tween(oldTab.Capsule, {BackgroundTransparency = 1}, 0.15)
                 end
             end
 
@@ -3773,19 +3803,30 @@ function Library:CreateWindow(options)
                 end
             end)
 
-            Theme:Register(tabObj.Label, "TextColor3", "Text")
+            local litText = Theme.Themes.Default.Text
+            tween(tabObj.Label, {TextColor3 = litText}, 0.15)
+            task.delay(0.15, function()
+                if tabObj.Label and tabObj.Label.Parent then
+                    Theme:Register(tabObj.Label, "TextColor3", "Text")
+                end
+            end)
             if tabObj.Icon then
-                Theme:Register(tabObj.Icon, "ImageColor3", "Text")
+                tween(tabObj.Icon, {ImageColor3 = litText}, 0.15)
+                task.delay(0.15, function()
+                    if tabObj.Icon and tabObj.Icon.Parent then
+                        Theme:Register(tabObj.Icon, "ImageColor3", "Text")
+                    end
+                end)
             end
-            Theme:Register(tabBtn, "BackgroundColor3", "Hover")
-            tween(tabBtn, {BackgroundTransparency = 0}, 0.2, Enum.EasingStyle.Quint)
-            -- same 0.2 Quint as the content fade, so rail and body move together
-            tween(activeIndicator, {BackgroundTransparency = 0}, 0.2, Enum.EasingStyle.Quint)
-            if indicatorShadow then
-                tween(indicatorShadow, {ImageTransparency = 0.6}, 0.2, Enum.EasingStyle.Quint)
+            tween(tabBtn, {BackgroundTransparency = 0}, 0.15)
+            if tabObj.Background then
+                tween(tabObj.Background, {BackgroundTransparency = 0}, 0.15)
             end
-            if activeGlow then
-                tween(activeGlow, {BackgroundTransparency = 0.75}, 0.2, Enum.EasingStyle.Quint)
+            if tabObj.Outline then
+                tween(tabObj.Outline, {Transparency = 0.65}, 0.15)
+            end
+            if tabObj.Capsule then
+                tween(tabObj.Capsule, {BackgroundTransparency = 0}, 0.15)
             end
 
             task.delay(0.2, function()
