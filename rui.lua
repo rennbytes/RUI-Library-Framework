@@ -2170,7 +2170,7 @@ function Library:CreateWindow(options)
     -- FAB position lives in RUI/fab.cfg and survives sessions, clamped so a
     -- spot saved on another screen size cant strand it off-screen
     local FAB_POS_FILE = "RUI/fab.cfg"
-    local FAB_W, FAB_H = 78, 36
+    local FAB_W, FAB_H = 88, 36
     local function loadFabPos()
         local data = readJson(FAB_POS_FILE)
         if type(data) ~= "table" then return nil end
@@ -2627,12 +2627,12 @@ function Library:CreateWindow(options)
         -- capsule
         mk("UICorner", {Parent = fab, CornerRadius = UDim.new(1, 0)})
 
-        -- outline
+        -- outline, softened so the glyph does the shouting
         local fabStroke = mk("UIStroke", {
             Parent = fab,
-            Thickness = 2,
+            Thickness = 1,
             Color = Theme.Themes.Default.Accent,
-            Transparency = 0
+            Transparency = 0.45
         })
         Theme:Register(fabStroke, "Color", "Accent")
 
@@ -2641,30 +2641,43 @@ function Library:CreateWindow(options)
 
         addShadow(fab, 0.3, 14)
 
-        -- accent dot + wordmark, reads as a logo instead of loose text
-        local fabDot = mk("Frame", {
+        -- icon tile, the dot this replaced read as a status light
+        local fabIconTile = mk("Frame", {
             Parent = fab,
             AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0, 13, 0.5, 0),
-            Size = UDim2.new(0, 10, 0, 10),
+            Position = UDim2.new(0, 8, 0.5, 0),
+            Size = UDim2.new(0, 22, 0, 22),
             BackgroundColor3 = Theme.Themes.Default.Accent,
+            BackgroundTransparency = 0.82,
             BorderSizePixel = 0
         })
-        Theme:Register(fabDot, "BackgroundColor3", "Accent")
-        mk("UICorner", {Parent = fabDot, CornerRadius = UDim.new(1, 0)})
+        Theme:Register(fabIconTile, "BackgroundColor3", "Accent")
+        mk("UICorner", {Parent = fabIconTile, CornerRadius = UDim.new(0, 6)})
+        local fabTileStroke = mk("UIStroke", {
+            Parent = fabIconTile,
+            Thickness = 1,
+            Color = Theme.Themes.Default.Accent,
+            Transparency = 0.65
+        })
+        Theme:Register(fabTileStroke, "Color", "Accent")
+        mkIcon("wand-sparkles", fabIconTile, 14, "Accent", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0)
+        })
 
         local fabLabel = mk("TextLabel", {
             Parent = fab,
             AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0, 30, 0.5, 0),
-            Size = UDim2.new(0, fabWidth - 30, 1, 0),
+            Position = UDim2.new(0, 36, 0.5, 0),
+            Size = UDim2.new(0, fabWidth - 44, 1, 0),
             BackgroundTransparency = 1,
             Text = "RUI",
             Font = Enum.Font.GothamBold,
-            TextSize = 14,
+            TextSize = 13,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
-            TextTransparency = windowObj.UserOpacity
+            TextTransparency = windowObj.UserOpacity,
+            TextTruncate = Enum.TextTruncate.AtEnd
         })
         Theme:Register(fabLabel, "TextColor3", "Text")
 
