@@ -1134,24 +1134,53 @@ end
 -- once it eventually builds
 local handleByFlag = {}
 
-local function storeFlag(name, val)
+local flagSyncing = {}
+
+local function registerFlagObject(name, obj)
+    if not name then return end
+    local list = savedFlags[name]
+    if not list then
+        list = {}
+        savedFlags[name] = list
+    end
+    table.insert(list, obj)
+    -- a newly built element starts at the current value without firing anyone
+    if flagValues[name] ~= nil then
+        pcall(function() obj:Set(flagValues[name], true) end)
+    end
+end
+
+local function applyFlagObjects(name, val, fireCallback)
+    if flagSyncing[name] then return end
+    flagSyncing[name] = true
+    local list = savedFlags[name]
+    if list then
+        for i, obj in ipairs(list) do
+            if type(obj.Set) == "function" then
+                local silent = not (fireCallback and i == 1)
+                pcall(function() obj:Set(val, silent) end)
+            end
+        end
+    end
+    flagSyncing[name] = nil
+end
+
+local function storeFlag(name, val, silent)
     if not name then return end
     flagValues[name] = val
-    local obj = savedFlags[name]
-    if obj then obj.Value = val end
-    -- more than one element can share a flag, keep every handle in sync
     local hs = handleByFlag[name]
     if hs then
         for _, h in ipairs(hs) do
             h.Value = val
         end
     end
+    if silent then return end
+    applyFlagObjects(name, val, false)
 end
 
 local function setFlagValue(name, val)
-    local obj = savedFlags[name]
-    if obj and type(obj.Set) == "function" then
-        obj:Set(val)
+    if savedFlags[name] then
+        applyFlagObjects(name, val, true)
     else
         -- element has not built yet, store the value so flagStart picks it up
         storeFlag(name, val)
@@ -1432,6 +1461,7 @@ function Library:Unload()
     end
     table.clear(Theme.themed)
     table.clear(savedFlags)
+    table.clear(flagSyncing)
     table.clear(flagValues)
     table.clear(toggleRefresh)
     table.clear(Library.Windows)
@@ -1479,12 +1509,9 @@ local function unpackFlags(packed)
                 val = raw == true
             end
             flagValues[name] = val
-            -- only push into the ui if that element happens to be built already,
-            -- otherwise it picks this up when the tab builds
-            local obj = savedFlags[name]
-            if obj and type(obj.Set) == "function" then
-                pcall(function() obj:Set(val) end)
-            end
+            -- push into every built element sharing this flag; unbuilt ones
+            -- pick it up from flagValues when their tab opens
+            applyFlagObjects(name, val, true)
         end
     end
 end
@@ -2552,12 +2579,9 @@ end
 
 function Library:ResetAll()
     for name, def in pairs(flagDefs) do
-        local obj = savedFlags[name]
         -- element isnt built yet, just remember the default for when it is
         flagValues[name] = def.Default
-        if obj and obj.Default ~= nil and type(obj.Set) == "function" then
-            pcall(function() obj:Set(obj.Default) end)
-        end
+        applyFlagObjects(name, def.Default, true)
     end
 end
 
@@ -3814,15 +3838,17 @@ function Library:CreateWindow(options)
                          local flagObj = {
                              Value = state,
                              Default = compDef.Default,
-                              Set = function(self, val)
+                              Set = function(self, val, silent)
                                   state = val and true or false
                                   self.Value = state
                                   updateState(true)
-                                  Library:SafeCallback(compDef.Callback, state)
-                                  storeFlag(compDef.Flag, state)
+                                  if not silent then
+                                      Library:SafeCallback(compDef.Callback, state)
+                                  end
+                                  storeFlag(compDef.Flag, state, silent)
                               end
                          }
-                         if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
+                         if compDef.Flag then registerFlagObject(compDef.Flag, flagObj) end
                         
                     elseif compDef.Type == "Slider" then
                         local sldFrame = mk("Frame", {
@@ -4045,7 +4071,7 @@ function Library:CreateWindow(options)
                         local flagObj = {
                             Value = value,
                             Default = compDef.Default,
-                             Set = function(self, val)
+                             Set = function(self, val, silent)
                                  local n = tonumber(val)
                                  if not n then return end
                                  value = math.floor(math.clamp(n, compDef.Min, compDef.Max))
@@ -4056,11 +4082,13 @@ function Library:CreateWindow(options)
                                  local span = math.max(1, compDef.Max - compDef.Min)
                                  local p = math.clamp((value - compDef.Min) / span, 0, 1)
                                  tween(fill, {Size = UDim2.new(p, 0, 1, 0)}, 0.1)
-                                 Library:SafeCallback(compDef.Callback, value)
-                                 storeFlag(compDef.Flag, value)
+                                 if not silent then
+                                     Library:SafeCallback(compDef.Callback, value)
+                                 end
+                                 storeFlag(compDef.Flag, value, silent)
                              end
                         }
-                        if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
+                        if compDef.Flag then registerFlagObject(compDef.Flag, flagObj) end
                         
                     elseif compDef.Type == "Dropdown" then
                         local dpHeight = 52
@@ -4252,7 +4280,7 @@ function Library:CreateWindow(options)
                         local flagObj = {
                             Value = dValue,
                             Default = compDef.Default,
-                             Set = function(self, val)
+                             Set = function(self, val, silent)
                                  dValue = val
                                  self.Value = val
                                  box.Text = " " .. tostring(val or "Select...")
@@ -4262,11 +4290,13 @@ function Library:CreateWindow(options)
                                      data.Btn.TextColor3 = on and Theme.Themes.Default.Text or Theme.Themes.Default.SubText
                                      Theme:Register(data.Btn, "TextColor3", on and "Text" or "SubText")
                                  end
-                                 Library:SafeCallback(compDef.Callback, val)
-                                 storeFlag(compDef.Flag, val)
+                                 if not silent then
+                                     Library:SafeCallback(compDef.Callback, val)
+                                 end
+                                 storeFlag(compDef.Flag, val, silent)
                              end
                         }
-                        if compDef.Flag then savedFlags[compDef.Flag] = flagObj end
+                        if compDef.Flag then registerFlagObject(compDef.Flag, flagObj) end
 
                     elseif compDef.Type == "Input" then
                         local inpFrame = mk("Frame", {
@@ -4335,15 +4365,17 @@ function Library:CreateWindow(options)
                         local inpFlag = {
                             Value = iValue,
                             Default = compDef.Default,
-                            Set = function(self, val)
+                            Set = function(self, val, silent)
                                 iValue = tostring(val or "")
                                 self.Value = iValue
                                 inp.Text = iValue
-                                Library:SafeCallback(compDef.Callback, iValue)
-                                storeFlag(compDef.Flag, iValue)
+                                if not silent then
+                                    Library:SafeCallback(compDef.Callback, iValue)
+                                end
+                                storeFlag(compDef.Flag, iValue, silent)
                             end
                         }
-                        if compDef.Flag then savedFlags[compDef.Flag] = inpFlag end
+                        if compDef.Flag then registerFlagObject(compDef.Flag, inpFlag) end
 
                     elseif compDef.Type == "Keybind" then
                         local kbFrame = mk("Frame", {
@@ -4440,17 +4472,19 @@ function Library:CreateWindow(options)
                         local kbFlag = {
                             Value = kbValue,
                             Default = compDef.Default,
-                            Set = function(self, val)
+                            Set = function(self, val, silent)
                                 kbValue = val
                                 self.Value = val
                                 listening = false
                                 listeningKeybind = false
                                 box.Text = val and val.Name or "None"
-                                Library:SafeCallback(compDef.Callback, val)
-                                storeFlag(compDef.Flag, val)
+                                if not silent then
+                                    Library:SafeCallback(compDef.Callback, val)
+                                end
+                                storeFlag(compDef.Flag, val, silent)
                             end
                         }
-                        if compDef.Flag then savedFlags[compDef.Flag] = kbFlag end
+                        if compDef.Flag then registerFlagObject(compDef.Flag, kbFlag) end
                     end
                 end
                 
