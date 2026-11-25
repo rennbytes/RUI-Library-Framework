@@ -3160,7 +3160,7 @@ function Library:CreateWindow(options)
                         -- colour lives in the icon, not the whole background
                         local btn = mk("TextButton", {
                             Parent = secFrame,
-                            Size = UDim2.new(1, 0, 0, 32),
+                            Size = UDim2.new(1, 0, 0, compDef.Desc and 50 or 32),
                             BackgroundColor3 = Theme.Themes.Default.Container,
                             AutoButtonColor = false,
                             Text = ""
@@ -3208,17 +3208,42 @@ function Library:CreateWindow(options)
                                 pinIconColor(icon, fixedColor)
                             end
                         end
-                        local btnLabel = mk("TextLabel", {
+                        local textCol = mk("Frame", {
                             Parent = btnRow,
                             Size = UDim2.new(1, compDef.Icon and -23 or 0, 1, 0),
+                            BackgroundTransparency = 1,
+                            LayoutOrder = 2
+                        })
+                        mk("UIListLayout", {
+                            Parent = textCol,
+                            FillDirection = Enum.FillDirection.Vertical,
+                            VerticalAlignment = Enum.VerticalAlignment.Center,
+                            Padding = UDim.new(0, 2)
+                        })
+                        local btnLabel = mk("TextLabel", {
+                            Parent = textCol,
+                            Size = UDim2.new(1, 0, 0, 17),
                             BackgroundTransparency = 1,
                             Text = compDef.Name,
                             Font = Enum.Font.GothamMedium,
                             TextSize = 13,
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            LayoutOrder = 2
+                            TextTruncate = Enum.TextTruncate.AtEnd
                         })
                         Theme:Register(btnLabel, "TextColor3", "Text")
+                        if compDef.Desc then
+                            local descLbl = mk("TextLabel", {
+                                Parent = textCol,
+                                Size = UDim2.new(1, 0, 0, 15),
+                                BackgroundTransparency = 1,
+                                Text = compDef.Desc,
+                                Font = Enum.Font.Gotham,
+                                TextSize = 10,
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                TextTruncate = Enum.TextTruncate.AtEnd
+                            })
+                            Theme:Register(descLbl, "TextColor3", "SubText")
+                        end
 
                         local function keepIconColor()
                             if icon and compDef.IconColor and icon.Parent then
@@ -5482,41 +5507,63 @@ if tabObj.Background then
         })
         Theme:Register(note, "TextColor3", "SubText")
 
-        -- ---- key box, glyph is drawn so it doesnt depend on a font ----
-        local box = mk("TextBox", {
+        -- ---- key box: same shell as the library's Input element ----
+        local boxShell = mk("Frame", {
             Parent = card,
             Size = UDim2.new(1, -PAD * 2, 0, 40),
             Position = UDim2.new(0, PAD, 0, 86),
-            BackgroundColor3 = Theme.Themes.Default.Section,
+            BackgroundColor3 = Theme.Themes.Default.Container,
+            BorderSizePixel = 0
+        })
+        Theme:Register(boxShell, "BackgroundColor3", "Container")
+        mk("UICorner", { Parent = boxShell, CornerRadius = UDim.new(0, 6) })
+        local boxStroke = mk("UIStroke", { Parent = boxShell, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
+        Theme:Register(boxStroke, "Color", "Border")
+        mk("UIPadding", {
+            Parent = boxShell,
+            PaddingLeft = UDim.new(0, 11),
+            PaddingRight = UDim.new(0, 8)
+        })
+
+        -- icon and textbox are siblings, so the glyph can never sit on the text
+        local boxRow = mk("Frame", {
+            Parent = boxShell,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1
+        })
+        mk("UIListLayout", {
+            Parent = boxRow,
+            FillDirection = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, 8)
+        })
+        mkIcon("key", boxRow, 14, "SubText", {
+            LayoutOrder = 1,
+            ImageTransparency = 0.35
+        })
+        local box = mk("TextBox", {
+            Parent = boxRow,
+            Size = UDim2.new(1, -22, 1, 0),
+            BackgroundTransparency = 1,
             BorderSizePixel = 0,
             Text = "",
             PlaceholderText = "Enter Key",
-            PlaceholderColor3 = Theme.Themes.Default.SubText,
-            TextSize = 14,
+            PlaceholderColor3 = Theme.Themes.Default.SubText:Lerp(Theme.Themes.Default.Background, 0.4),
+            TextSize = 11,
             TextColor3 = Theme.Themes.Default.Text,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
-            ClearTextOnFocus = false
+            ClearTextOnFocus = false,
+            LayoutOrder = 2
         })
-        Theme:Register(box, "BackgroundColor3", "Section")
         Theme:Register(box, "TextColor3", "Text")
-        Theme:Register(box, "PlaceholderColor3", "SubText")
-        mk("UICorner", { Parent = box, CornerRadius = UDim.new(0, 10) })
-        mk("UIPadding", { Parent = box, PaddingLeft = UDim.new(0, 42), PaddingRight = UDim.new(0, 12) })
-        local boxStroke = mk("UIStroke", { Parent = box, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
-        Theme:Register(boxStroke, "Color", "Border")
 
-        mkIcon("key", box, 18, "SubText", {
-            AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0, 12, 0.5, 0),
-            ImageTransparency = 0.15
-        })
-
+        -- focus just tightens the neutral border, same as every other input
         track(box.Focused:Connect(function()
-            tween(boxStroke, {Color = Theme.Themes.Default.Accent, Transparency = 0}, 0.15)
+            tween(boxStroke, {Transparency = 0.2}, 0.15)
         end))
         track(box.FocusLost:Connect(function()
-            tween(boxStroke, {Color = Theme.Themes.Default.Border, Transparency = 0.5}, 0.2)
+            tween(boxStroke, {Transparency = 0.5}, 0.2)
         end))
 
         local status = mk("TextLabel", {
