@@ -598,7 +598,10 @@ local IMAGES = {}
 
 local function imageId(name)
     if not name then return nil end
-    if tostring(name):sub(1, 12) == "rbxassetid://" then return name end
+    local s = tostring(name)
+    -- rbxassetid and Roblox CDN URLs are both passed through. a CDN URL may not
+    -- render on every executor, so banners keep their icon behind the image.
+    if s:sub(1, 12) == "rbxassetid://" or s:match("^https?://") then return s end
     return IMAGES[name] or ICONS[name]
 end
 
@@ -1401,6 +1404,7 @@ function Library:Unload()
     activeDrag = nil
     listeningKeybind = false
     gateOverlay, gateCard, gateStroke = nil, nil, nil
+    self.GateCard = nil
     self.Gate = nil
     activeDropdown = nil
     if cancelServerSearch then cancelServerSearch() end
@@ -2233,6 +2237,13 @@ function Library:GameModal(opts)
     })
     Theme:Register(banner, "BackgroundColor3", "Container")
     mk("UICorner", {Parent = banner, CornerRadius = UDim.new(0, 12)})
+    -- the glyph stays underneath so a CDN URL that fails to load leaves a
+    -- finished-looking banner instead of a blank box
+    mkIcon(opts.Icon or "gamepad-2", banner, 72, "Accent", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        ImageTransparency = 0.35
+    })
     local image = imageId(opts.Image)
     if image then
         local bannerImg = mk("ImageLabel", {
@@ -2246,12 +2257,6 @@ function Library:GameModal(opts)
             Parent = bannerImg, Thickness = 1,
             Color = Theme.Themes.Default.Border, Transparency = 0.6
         }), "Color", "Border")
-    else
-        mkIcon(opts.Icon or "gamepad-2", banner, 72, "Accent", {
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(0.5, 0, 0.5, 0),
-            ImageTransparency = 0.35
-        })
     end
     local scrim = mk("Frame", {
         Parent = banner,
@@ -3258,8 +3263,6 @@ function Library:CreateWindow(options)
                 end
             end
         end
-        -- the gate owns all input while its up
-        if gateActive then return end
         -- escape closes it unless a keybind element is waiting on a key
         if input.KeyCode == Enum.KeyCode.Escape and not windowObj.Locked and not windowObj.Hidden and not listeningKeybind then
             setHidden(true)
@@ -5730,6 +5733,7 @@ if tabObj.Background then
     -- getgenv().SCRIPT_KEY do task.wait(0.1) end` til then
     local gateOverlay, gateCard, gateStroke = nil, nil, nil
     local gateOldDisplay = nil
+    local gatePlayOutro = nil
 
     local function closeGate()
         if not gateOverlay then return end
@@ -5737,17 +5741,27 @@ if tabObj.Background then
         local cd = gateCard
         local gs = gateStroke
         gateOverlay, gateCard, gateStroke = nil, nil, nil
-        tween(ov, {BackgroundTransparency = 1}, 0.3)
-        if cd then
-            tween(cd, {GroupTransparency = 1}, 0.25)
-        end
-        if gs then
-            tween(gs, {Transparency = 1}, 0.25)
-        end
         local gateShadow = ov:FindFirstChild("GateShadow")
         local gateShadowImg = gateShadow and gateShadow:FindFirstChild("Shadow")
-        if gateShadowImg then
-            tween(gateShadowImg, {ImageTransparency = 1}, 0.25)
+        local playOutro = gatePlayOutro
+        gatePlayOutro = nil
+        if playOutro then
+            playOutro(ov, cd, gs, gateShadowImg)
+        else
+            ov.Visible = false
+            tween(ov, {BackgroundTransparency = 1}, 0.3)
+            if cd then
+                tween(cd, {GroupTransparency = 1}, 0.25)
+            end
+            if gs then
+                tween(gs, {Transparency = 1}, 0.25)
+            end
+            if gateShadowImg then
+                tween(gateShadowImg, {ImageTransparency = 1}, 0.25)
+            end
+            task.delay(0.3, function()
+                if ov.Parent then ov:Destroy() end
+            end)
         end
 
         -- hand input back to the game and unlock the window shortcuts
@@ -5761,14 +5775,16 @@ if tabObj.Background then
             gateOldDisplay = nil
         end
 
-        -- gate is gone, bring the drag bar and fab back if the window wants them
+        -- gate is gone, bring the hub back unless the caller is handing off
+        -- straight to another script and wants only its own toast to show
         if fab then fab.Visible = true end
-        if not windowObj.Minimized and not windowObj.Hidden then
+        if not Library.HideHubOnGateClose
+            and not windowObj.Minimized and not windowObj.Hidden then
+            canvasGroup.Visible = true
+            shadowFrame.Visible = true
+            tween(canvasGroup, {GroupTransparency = windowObj.UserOpacity}, 0.3)
             dragBar.Visible = true
         end
-        task.delay(0.3, function()
-            if ov.Parent then ov:Destroy() end
-        end)
     end
 
     local function buildKeyGate(keyOpts)
@@ -5794,6 +5810,16 @@ if tabObj.Background then
         local GATE_W = 400
         local GATE_H = 196
         local PAD = 20
+        local INTRO = true
+        local INTRO_SIZE = 76
+        local INTRO_HOLD = 1
+        local INTRO_TIME = 0.65
+
+        -- only the key card is visible until a key passes
+        canvasGroup.Visible = false
+        shadowFrame.Visible = false
+        dragBar.Visible = false
+        if fab then fab.Visible = false end
 
         local overlay = mk("Frame", {
             Parent = gui,
@@ -5829,15 +5855,76 @@ if tabObj.Background then
             ClipsDescendants = true
         })
         gateCard = card
+        Library.GateCard = card
         Theme:Register(card, "BackgroundColor3", "Background")
         mk("UICorner", { Parent = card, CornerRadius = UDim.new(0, 16) })
         local cardStroke = mk("UIStroke", { Parent = card, Thickness = 1, Color = Theme.Themes.Default.Border, Transparency = 0.5 })
         Theme:Register(cardStroke, "Color", "Border")
         gateStroke = cardStroke
 
+        -- body fades in after the square intro; the intro square is a sibling
+        -- so it can sit above the body while the card expands
+        local gateBody = mk("CanvasGroup", {
+            Parent = card,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            GroupTransparency = 1,
+            Visible = not INTRO
+        })
+        local introBox = mk("Frame", {
+            Parent = card,
+            Size = UDim2.new(0, INTRO_SIZE, 0, INTRO_SIZE),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Theme.Themes.Default.Background,
+            BackgroundTransparency = 0,
+            BorderSizePixel = 0,
+            Visible = INTRO,
+            ZIndex = 70
+        })
+        Theme:Register(introBox, "BackgroundColor3", "Background")
+        mk("UICorner", {Parent = introBox, CornerRadius = UDim.new(0, 16)})
+        local introGlyph = mkIcon("key", introBox, 28, "Accent", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            ImageTransparency = 1,
+            ZIndex = 71
+        })
+
+        -- outro mirrors the intro: body fades out, glyph returns, card shrinks
+        -- back into the square, then everything dissolves. no confetti.
+        gatePlayOutro = function(ov, cd, gs, shadowImg)
+            task.spawn(function()
+                tween(gateBody, {GroupTransparency = 1}, 0.2)
+                task.wait(0.2)
+                gateBody.Visible = false
+                introBox.Visible = true
+                introBox.BackgroundTransparency = 0
+                if introGlyph then
+                    introGlyph.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    introGlyph.Size = UDim2.new(0, 28, 0, 28)
+                    tween(introGlyph, {ImageTransparency = 0}, 0.35)
+                end
+                if gs then tween(gs, {Transparency = 0.55}, 0.4) end
+                if cd then
+                    tween(cd, {
+                        Size = UDim2.new(0, INTRO_SIZE, 0, INTRO_SIZE)
+                    }, 0.65, Enum.EasingStyle.Quart, Enum.EasingDirection.InOut)
+                end
+                task.wait(0.7)
+                if cd then tween(cd, {GroupTransparency = 1}, 0.35) end
+                if gs then tween(gs, {Transparency = 1}, 0.35) end
+                if shadowImg then tween(shadowImg, {ImageTransparency = 1}, 0.35) end
+                if introGlyph then tween(introGlyph, {ImageTransparency = 1}, 0.35) end
+                tween(ov, {BackgroundTransparency = 1}, 0.35)
+                task.wait(0.4)
+                if ov.Parent then ov:Destroy() end
+            end)
+        end
+
         -- ---- title + note ----
         local titleLbl = mk("TextLabel", {
-            Parent = card,
+            Parent = gateBody,
             Size = UDim2.new(1, -PAD * 2 - 96, 0, 24),
             Position = UDim2.new(0, PAD, 0, 22),
             BackgroundTransparency = 1,
@@ -5851,7 +5938,7 @@ if tabObj.Background then
 
         -- discord copy sitting on the header line, same row as the title
         local discordBtn = mk("TextButton", {
-            Parent = card,
+            Parent = gateBody,
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.new(1, -PAD, 0, 34),
             Size = UDim2.new(0, 88, 0, 24),
@@ -5920,7 +6007,7 @@ if tabObj.Background then
         end))
 
         local note = mk("TextLabel", {
-            Parent = card,
+            Parent = gateBody,
             Size = UDim2.new(1, -PAD * 2, 0, 18),
             Position = UDim2.new(0, PAD, 0, 54),
             BackgroundTransparency = 1,
@@ -5934,7 +6021,7 @@ if tabObj.Background then
 
         -- ---- key box: same shell as the library's Input element ----
         local boxShell = mk("Frame", {
-            Parent = card,
+            Parent = gateBody,
             Size = UDim2.new(1, -PAD * 2, 0, 40),
             Position = UDim2.new(0, PAD, 0, 86),
             BackgroundColor3 = Theme.Themes.Default.Container,
@@ -5992,7 +6079,7 @@ if tabObj.Background then
         end))
 
         local status = mk("TextLabel", {
-            Parent = card,
+            Parent = gateBody,
             Size = UDim2.new(1, -PAD * 2, 0, 16),
             Position = UDim2.new(0, PAD, 0, 132),
             BackgroundTransparency = 1,
@@ -6018,7 +6105,7 @@ if tabObj.Background then
 
         -- ---- action row ----
         local btnRow = mk("Frame", {
-            Parent = card,
+            Parent = gateBody,
             Size = UDim2.new(1, -PAD * 2, 0, 36),
             Position = UDim2.new(0, PAD, 0, 150),
             BackgroundTransparency = 1
@@ -6119,9 +6206,12 @@ if tabObj.Background then
         local checkBtn, checkLbl = makeGateBtn("Submit", 112, "Accent", 3, "arrowRight")
 
         track(exitBtn.MouseButton1Click:Connect(function()
-            -- closes the whole ui, the loader still waits on its key so
-            -- nothing below the gate runs
-            Library:Unload()
+            -- play the outro first, then tear everything down. the loader still
+            -- waits on its key so nothing below the gate runs
+            closeGate()
+            task.delay(1.8, function()
+                Library:Unload()
+            end)
         end))
 
         local getChevron = nil
@@ -6301,11 +6391,12 @@ if tabObj.Background then
                     if saveToggleOn then
                         writeKey(key)
                     end
-                    sayGate("Key accepted.", "Accent")
-                    task.delay(0.4, function()
-                        closeGate()
-                    end)
-                    notifs:Notify("Access Granted", msg or "Key valid.", 3)
+                    -- play the outro on success too; the hub stays hidden while
+                    -- the gate card folds away, so only the gate is visible
+                    closeGate()
+                    if not Library.SkipGateNotif then
+                        notifs:Notify("Access Granted", msg or "Key valid.", 3)
+                    end
                 else
                     sayGate(msg or "Invalid key.", "Bad")
                 end
@@ -6329,50 +6420,55 @@ if tabObj.Background then
             end)
         end
 
-        -- gate owns the session until a key passes: top layer so nothing else
-        -- is above it, movement/jump sunk, and the window shortcuts suspended
+        -- gate sits on top, but the player keeps control of their character
         gateActive = true
         gateOldDisplay = gui.DisplayOrder
         gui.DisplayOrder = 2147483647
-        pcall(function()
-            ContextActionService:BindActionAtPriority(GATE_BLOCK_ACTION, function()
-                return Enum.ContextActionResult.Sink
-            end, false, 9000,
-                Enum.PlayerActions.CharacterForward,
-                Enum.PlayerActions.CharacterBackward,
-                Enum.PlayerActions.CharacterLeft,
-                Enum.PlayerActions.CharacterRight,
-                Enum.PlayerActions.CharacterJump
-            )
-        end)
-        pcall(function()
-            ContextActionService:BindActionAtPriority(GATE_BLOCK_KEYS, function()
-                return Enum.ContextActionResult.Sink
-            end, false, 9000,
-                Enum.KeyCode.W,
-                Enum.KeyCode.A,
-                Enum.KeyCode.S,
-                Enum.KeyCode.D,
-                Enum.KeyCode.Up,
-                Enum.KeyCode.Down,
-                Enum.KeyCode.Left,
-                Enum.KeyCode.Right,
-                Enum.KeyCode.Space,
-                Enum.KeyCode.LeftShift,
-                Enum.KeyCode.RightShift,
-                Enum.KeyCode.LeftControl,
-                Enum.KeyCode.RightControl
-            )
-        end)
 
         -- hide the drag bar and fab while the gate is up, they live above everything
         dragBar.Visible = false
         if fab then fab.Visible = false end
 
-        tween(overlay, {BackgroundTransparency = 0.45}, 0.3)
-        tween(card, {GroupTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.35, Enum.EasingStyle.Quint)
-        tween(shadowHolder, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.35, Enum.EasingStyle.Quint)
-        tween(shadowImg, {ImageTransparency = 0.5}, 0.35)
+        tween(overlay, {BackgroundTransparency = 0.5}, 0.5, Enum.EasingStyle.Sine)
+        tween(card, {GroupTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.4, Enum.EasingStyle.Quint)
+        tween(shadowHolder, {Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.7, Enum.EasingStyle.Quint)
+        tween(shadowImg, {ImageTransparency = 0.5}, 0.7, Enum.EasingStyle.Quint)
+
+        if INTRO then
+            -- square breathes, then the card opens while the body and glyph
+            -- cross-fade together instead of one after another
+            card.Size = UDim2.new(0, INTRO_SIZE - 14, 0, INTRO_SIZE - 14)
+            cardStroke.Transparency = 1 -- its blue corners peeked out behind the square
+            task.spawn(function()
+                tween(card, {Size = UDim2.new(0, INTRO_SIZE, 0, INTRO_SIZE)}, 0.4, Enum.EasingStyle.Back)
+                tween(introGlyph, {ImageTransparency = 0}, 0.4, Enum.EasingStyle.Sine)
+                tween(introBox, {Size = UDim2.new(0, INTRO_SIZE + 8, 0, INTRO_SIZE + 8)}, 0.45, Enum.EasingStyle.Sine)
+                task.wait(0.22)
+                tween(introBox, {Size = UDim2.new(0, INTRO_SIZE, 0, INTRO_SIZE)}, 0.4, Enum.EasingStyle.Sine)
+                task.wait(INTRO_HOLD)
+
+                gateBody.Visible = true
+                tween(card, {Size = UDim2.new(0, GATE_W, 0, GATE_H)}, INTRO_TIME, Enum.EasingStyle.Quint)
+                tween(gateBody, {GroupTransparency = 0}, INTRO_TIME + 0.1, Enum.EasingStyle.Quint)
+                tween(introBox, {BackgroundTransparency = 1}, 0.55, Enum.EasingStyle.Quint)
+                tween(cardStroke, {Transparency = 0.5}, INTRO_TIME, Enum.EasingStyle.Quint)
+                if introGlyph then
+                    tween(introGlyph, {
+                        Size = UDim2.new(0, 14, 0, 14),
+                        Position = UDim2.new(0.5, 0, 0.1, 0),
+                        ImageTransparency = 1
+                    }, 0.55, Enum.EasingStyle.Quint)
+                end
+                -- keep the square for the outro, just hide it while the card is open
+                task.delay(0.9, function()
+                    introBox.Visible = false
+                end)
+            end)
+        else
+            gateBody.Visible = true
+            gateBody.GroupTransparency = 0
+            introBox.Visible = false
+        end
     end
 
     -- home is pinned to the very top, servers/customize/settings to the very
@@ -6679,6 +6775,88 @@ if tabObj.Background then
     end
 
     return windowObj
+end
+
+-- small public animations other scripts can reuse. no gate logic lives here,
+-- just effects against a GuiObject the caller already has.
+function Library:Burst(parent, count, pulse)
+    if not parent or not parent.Parent then return end
+    count = count or 20
+    local colors = {
+        Theme.Themes.Default.Accent,
+        Color3.fromRGB(190, 125, 255),
+        Color3.fromRGB(80, 215, 130),
+        Color3.fromRGB(255, 185, 65),
+        Color3.fromRGB(90, 180, 255)
+    }
+    local layer = mk("Frame", {
+        Parent = parent,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1,
+        ZIndex = 8
+    })
+    for i = 1, count do
+        local angle = (i / count) * math.pi * 2 + math.random() * 0.3
+        local dist = 70 + math.random() * 45
+        local piece = mk("Frame", {
+            Parent = layer,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            Size = UDim2.new(0, math.random(4, 7), 0, math.random(3, 5)),
+            BackgroundColor3 = colors[math.random(#colors)],
+            BorderSizePixel = 0,
+            Rotation = math.random(0, 360),
+            ZIndex = 10
+        })
+        mk("UICorner", {Parent = piece, CornerRadius = UDim.new(0, 2)})
+        local t = 0.55 + math.random() * 0.3
+        tween(piece, {
+            Position = UDim2.new(0.5, math.cos(angle) * dist, 0.5, math.sin(angle) * dist * 0.85 + 14),
+            Rotation = piece.Rotation + math.random(-260, 260)
+        }, t, Enum.EasingStyle.Quint)
+        task.delay(t * 0.6, function()
+            tween(piece, {BackgroundTransparency = 1}, t * 0.8)
+        end)
+        task.delay(t * 1.5 + 0.2, function()
+            piece:Destroy()
+        end)
+    end
+    if pulse then
+        local ring = mk("Frame", {
+            Parent = layer,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            Size = UDim2.new(0, 40, 0, 40),
+            BackgroundTransparency = 1,
+            ZIndex = 9
+        })
+        mk("UICorner", {Parent = ring, CornerRadius = UDim.new(1, 0)})
+        local stroke = mk("UIStroke", {
+            Parent = ring, Thickness = 2,
+            Color = Theme.Themes.Default.Accent, Transparency = 0.2
+        })
+        tween(ring, {Size = UDim2.new(0, 160, 0, 160)}, 0.7, Enum.EasingStyle.Quint)
+        tween(stroke, {Transparency = 1}, 0.7)
+        task.delay(0.85, function() ring:Destroy() end)
+    end
+    task.delay(1.4, function()
+        if layer.Parent then layer:Destroy() end
+    end)
+end
+
+function Library:Shake(parent, amount)
+    if not parent or not parent.Parent then return end
+    amount = amount or 6
+    local start = parent.Position
+    for i = 1, 5 do
+        local shift = (i % 2 == 0) and amount or -amount
+        tween(parent, {
+            Position = UDim2.new(start.X.Scale, start.X.Offset + shift,
+                                 start.Y.Scale, start.Y.Offset)
+        }, 0.05, Enum.EasingStyle.Sine)
+        task.wait(0.05)
+    end
+    tween(parent, {Position = start}, 0.1, Enum.EasingStyle.Sine)
 end
 
 -- globals so u can just do RUI:CreateWindow after loading it, and so
