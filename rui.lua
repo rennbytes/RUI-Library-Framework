@@ -593,6 +593,15 @@ local ICONS = {
     ["zoom-out"] = "rbxassetid://108334162607319",
 }
 
+-- wider artwork (game banners etc) lives here so it can be reused by name
+local IMAGES = {}
+
+local function imageId(name)
+    if not name then return nil end
+    if tostring(name):sub(1, 12) == "rbxassetid://" then return name end
+    return IMAGES[name] or ICONS[name]
+end
+
 -- makes an ImageLabel from a registered icon. table values support a sheet:
 -- {Image = id, Offset = Vector2, Size = Vector2}
 local function mkIcon(name, parent, size, themeKey, props)
@@ -1314,6 +1323,24 @@ end
 
 function Library:GetIcon(name)
     return ICONS[name]
+end
+
+function Library:SetImage(name, id)
+    if type(name) ~= "string" then return false end
+    IMAGES[name] = id
+    return true
+end
+
+function Library:AddImages(tbl)
+    if type(tbl) ~= "table" then return false end
+    for name, id in pairs(tbl) do
+        IMAGES[name] = id
+    end
+    return true
+end
+
+function Library:GetImage(name)
+    return imageId(name)
 end
 
 function Library:GetIcons()
@@ -2088,6 +2115,403 @@ function Library:Modal(opts)
     tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
     tween(card, {GroupTransparency = 0}, 0.3, Enum.EasingStyle.Quint)
     tween(cardStroke, {Transparency = 0.5}, 0.3, Enum.EasingStyle.Quint)
+end
+
+-- game detail dialog: artwork, script info and one action. no code preview.
+-- opts: Title, Desc, Info, Icon, Image, ScriptImage, Creator, PlaceId,
+--       OnLoad, Addons = {{Name, Icon, Callback}}, OnClose
+function Library:GameModal(opts)
+    opts = opts or {}
+    local parent = getModalGui()
+    local owned = {}
+    local function own(x)
+        table.insert(owned, x)
+        return x
+    end
+    local closed = false
+    local CARD_W, CARD_H = 440, 500
+
+    local overlay = own(mk("Frame", {
+        Parent = parent,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Active = true,
+        ZIndex = 100
+    }))
+    local card = own(mk("CanvasGroup", {
+        Parent = overlay,
+        Size = UDim2.new(0, CARD_W, 0, CARD_H),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Theme.Themes.Default.Background,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        ClipsDescendants = true
+    }))
+    Theme:Register(card, "BackgroundColor3", "Background")
+    mk("UICorner", {Parent = card, CornerRadius = UDim.new(0, 18)})
+    local stroke = own(mk("UIStroke", {
+        Parent = card, Thickness = 1,
+        Color = Theme.Themes.Default.Border, Transparency = 1
+    }))
+    Theme:Register(stroke, "Color", "Border")
+
+    local function shut()
+        if closed then return end
+        closed = true
+        tween(overlay, {BackgroundTransparency = 1}, 0.2)
+        tween(card, {GroupTransparency = 1}, 0.2)
+        tween(stroke, {Transparency = 1}, 0.2)
+        task.delay(0.22, function()
+            if overlay.Parent then overlay:Destroy() end
+            for _, c in ipairs(owned) do
+                pcall(function()
+                    if typeof(c) == "RBXScriptConnection" then
+                        c:Disconnect()
+                    elseif typeof(c) == "Instance" and c.Parent then
+                        c:Destroy()
+                    end
+                end)
+            end
+            table.clear(owned)
+            if opts.OnClose then pcall(opts.OnClose) end
+        end)
+    end
+
+    -- ---- top bar ----
+    local placeChip = mk("Frame", {
+        Parent = card,
+        Position = UDim2.new(0, 16, 0, 12),
+        Size = UDim2.new(0, 108, 0, 22),
+        BackgroundColor3 = Theme.Themes.Default.Section,
+        BorderSizePixel = 0
+    })
+    Theme:Register(placeChip, "BackgroundColor3", "Section")
+    mk("UICorner", {Parent = placeChip, CornerRadius = UDim.new(0, 6)})
+    mkIcon("coins", placeChip, 12, "Accent", {Position = UDim2.new(0, 7, 0.5, -6), ImageTransparency = 0.1})
+    local placeLbl = mk("TextLabel", {
+        Parent = placeChip,
+        Position = UDim2.new(0, 24, 0, 0),
+        Size = UDim2.new(1, -30, 1, 0),
+        BackgroundTransparency = 1,
+        Text = "# " .. tostring(opts.PlaceId or "—"),
+        Font = Enum.Font.GothamBold,
+        TextSize = 10,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    Theme:Register(placeLbl, "TextColor3", "SubText")
+
+    local closeBtn = mk("TextButton", {
+        Parent = card,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -16, 0, 12),
+        Size = UDim2.new(0, 28, 0, 24),
+        BackgroundColor3 = Theme.Themes.Default.Section,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false
+    })
+    Theme:Register(closeBtn, "BackgroundColor3", "Section")
+    mk("UICorner", {Parent = closeBtn, CornerRadius = UDim.new(0, 6)})
+    mkIcon("x", closeBtn, 12, "SubText", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        ImageTransparency = 0.2
+    })
+    own(closeBtn.MouseButton1Click:Connect(shut))
+
+    -- ---- banner ----
+    local banner = mk("Frame", {
+        Parent = card,
+        Position = UDim2.new(0, 16, 0, 44),
+        Size = UDim2.new(1, -32, 0, 166),
+        BackgroundColor3 = Theme.Themes.Default.Container,
+        BorderSizePixel = 0,
+        ClipsDescendants = true
+    })
+    Theme:Register(banner, "BackgroundColor3", "Container")
+    mk("UICorner", {Parent = banner, CornerRadius = UDim.new(0, 12)})
+    local image = imageId(opts.Image)
+    if image then
+        local bannerImg = mk("ImageLabel", {
+            Parent = banner,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Image = image,
+            ScaleType = Enum.ScaleType.Crop
+        })
+        Theme:Register(mk("UIStroke", {
+            Parent = bannerImg, Thickness = 1,
+            Color = Theme.Themes.Default.Border, Transparency = 0.6
+        }), "Color", "Border")
+    else
+        mkIcon(opts.Icon or "gamepad-2", banner, 72, "Accent", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            ImageTransparency = 0.35
+        })
+    end
+    local scrim = mk("Frame", {
+        Parent = banner,
+        Size = UDim2.new(1, 0, 0, 74),
+        Position = UDim2.new(0, 0, 1, -74),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.35,
+        BorderSizePixel = 0
+    })
+    mk("UICorner", {Parent = scrim, CornerRadius = UDim.new(0, 12)})
+    local bannerTitle = mk("TextLabel", {
+        Parent = scrim,
+        Position = UDim2.new(0, 14, 0, 12),
+        Size = UDim2.new(1, -28, 0, 40),
+        BackgroundTransparency = 1,
+        Text = opts.Title or opts.Name or "Game",
+        Font = Enum.Font.GothamBold,
+        TextSize = 26,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextWrapped = true
+    })
+    Theme:Register(bannerTitle, "TextColor3", "Text")
+
+    -- ---- script block ----
+    local scriptRow = mk("Frame", {
+        Parent = card,
+        Position = UDim2.new(0, 16, 0, 222),
+        Size = UDim2.new(1, -32, 0, 52),
+        BackgroundTransparency = 1
+    })
+    local scriptIcon = imageId(opts.ScriptImage or opts.Icon)
+    if scriptIcon then
+        local thumb = mk("ImageLabel", {
+            Parent = scriptRow,
+            Size = UDim2.new(0, 44, 0, 44),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0,
+            Image = scriptIcon,
+            ScaleType = Enum.ScaleType.Fit
+        })
+        Theme:Register(thumb, "BackgroundColor3", "Section")
+        mk("UICorner", {Parent = thumb, CornerRadius = UDim.new(0, 8)})
+    end
+    local scriptTitle = mk("TextLabel", {
+        Parent = scriptRow,
+        Position = UDim2.new(0, 54, 0, 2),
+        Size = UDim2.new(1, -54, 0, 24),
+        BackgroundTransparency = 1,
+        Text = opts.ScriptTitle or ((opts.Name or "Script") .. " — Script"),
+        Font = Enum.Font.GothamBold,
+        TextSize = 15,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextTruncate = Enum.TextTruncate.AtEnd
+    })
+    Theme:Register(scriptTitle, "TextColor3", "Text")
+    local scriptBy = mk("TextLabel", {
+        Parent = scriptRow,
+        Position = UDim2.new(0, 54, 0, 28),
+        Size = UDim2.new(1, -54, 0, 16),
+        BackgroundTransparency = 1,
+        Text = opts.Creator or "Ren",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    Theme:Register(scriptBy, "TextColor3", "SubText")
+
+    -- ---- primary action ----
+    local here = opts.PlaceId and game.PlaceId == opts.PlaceId
+    local action = mk("TextButton", {
+        Parent = card,
+        Position = UDim2.new(0, 16, 0, 286),
+        Size = UDim2.new(1, -32, 0, 40),
+        BackgroundColor3 = Theme.Themes.Default.Accent,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false
+    })
+    Theme:Register(action, "BackgroundColor3", "Accent")
+    mk("UICorner", {Parent = action, CornerRadius = UDim.new(0, 9)})
+    local actionRow = mk("Frame", {
+        Parent = action, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1
+    })
+    mk("UIListLayout", {
+        Parent = actionRow,
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        Padding = UDim.new(0, 8)
+    })
+    local playIcon = mkIcon("play", actionRow, 13, "Background", {LayoutOrder = 1})
+    if playIcon then pinIconColor(playIcon, Theme.Themes.Default.Background) end
+    local actionLbl = mk("TextLabel", {
+        Parent = actionRow,
+        Size = UDim2.new(0, 90, 0, 20),
+        BackgroundTransparency = 1,
+        Text = here and "Load" or "Join game",
+        Font = Enum.Font.GothamBold,
+        TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 2
+    })
+    Theme:Register(actionLbl, "TextColor3", "Background")
+    own(action.MouseEnter:Connect(function() tween(action, {BackgroundColor3 = Theme.Themes.Default.Accent:Lerp(Color3.new(1, 1, 1), 0.12)}, 0.15) end))
+    own(action.MouseLeave:Connect(function() tween(action, {BackgroundColor3 = Theme.Themes.Default.Accent}, 0.15) end))
+    own(action.MouseButton1Click:Connect(function()
+        if not here then
+            pcall(function() TeleportService:Teleport(opts.PlaceId) end)
+            shut()
+            return
+        end
+        shut()
+        if opts.OnLoad then
+            task.defer(function() pcall(opts.OnLoad) end)
+        end
+    end))
+
+    -- ---- secondary icon buttons ----
+    local actions = {
+        {"copy", "Copy link", function()
+            copyToClipboard(opts.Url or "")
+            notifs:Notify("Game", "Script link copied.", 2)
+        end},
+        {"bookmark", "Save", function()
+            notifs:Notify("Game", "Saved to your list.", 2)
+        end},
+        {"link-2", "Open", function()
+            pcall(function()
+                if setclipboard then setclipboard(opts.Url or "") end
+            end)
+            notifs:Notify("Game", "Link ready to paste.", 2)
+        end}
+    }
+    for i, data in ipairs(actions) do
+        local btn = mk("TextButton", {
+            Parent = card,
+            Position = UDim2.new(0, 16 + (i - 1) * 44, 0, 336),
+            Size = UDim2.new(0, 36, 0, 32),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0,
+            Text = "",
+            AutoButtonColor = false
+        })
+        Theme:Register(btn, "BackgroundColor3", "Section")
+        mk("UICorner", {Parent = btn, CornerRadius = UDim.new(0, 8)})
+        mkIcon(data[1], btn, 14, "SubText", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            ImageTransparency = 0.15
+        })
+        own(btn.MouseButton1Click:Connect(data[3]))
+    end
+
+    -- ---- add-ons ----
+    local addOns = opts.Addons or {}
+    if #addOns > 0 then
+        local addLbl = mk("TextLabel", {
+            Parent = card,
+            Position = UDim2.new(0, 16, 0, 382),
+            Size = UDim2.new(1, -32, 0, 18),
+            BackgroundTransparency = 1,
+            Text = "Add-ons",
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+        Theme:Register(addLbl, "TextColor3", "SubText")
+        for i, addon in ipairs(addOns) do
+            local chip = mk("TextButton", {
+                Parent = card,
+                Position = UDim2.new(0, 16 + (i - 1) * 102, 0, 404),
+                Size = UDim2.new(0, 96, 0, 28),
+                BackgroundColor3 = Theme.Themes.Default.Section,
+                BorderSizePixel = 0,
+                Text = "",
+                AutoButtonColor = false
+            })
+            Theme:Register(chip, "BackgroundColor3", "Section")
+            mk("UICorner", {Parent = chip, CornerRadius = UDim.new(0, 7)})
+            mkIcon(addon.Icon or "sparkles", chip, 12, "Accent", {
+                Position = UDim2.new(0, 8, 0.5, -6),
+                ImageTransparency = 0.1
+            })
+            local chipLbl = mk("TextLabel", {
+                Parent = chip,
+                Position = UDim2.new(0, 24, 0, 0),
+                Size = UDim2.new(1, -28, 1, 0),
+                BackgroundTransparency = 1,
+                Text = addon.Name or "Add-on",
+                Font = Enum.Font.GothamMedium,
+                TextSize = 10,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd
+            })
+            Theme:Register(chipLbl, "TextColor3", "Text")
+            own(chip.MouseButton1Click:Connect(function()
+                if addon.Callback then pcall(addon.Callback) end
+            end))
+        end
+    end
+
+    -- ---- script info ----
+    local infoY = (#addOns > 0) and 442 or 382
+    local infoBox = mk("Frame", {
+        Parent = card,
+        Position = UDim2.new(0, 16, 0, infoY),
+        Size = UDim2.new(1, -32, 0, CARD_H - infoY - 16),
+        BackgroundColor3 = Theme.Themes.Default.Section,
+        BorderSizePixel = 0
+    })
+    Theme:Register(infoBox, "BackgroundColor3", "Section")
+    mk("UICorner", {Parent = infoBox, CornerRadius = UDim.new(0, 9)})
+    mk("UIPadding", {
+        Parent = infoBox,
+        PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12)
+    })
+    local infoTitle = mk("TextLabel", {
+        Parent = infoBox,
+        Size = UDim2.new(1, 0, 0, 16),
+        BackgroundTransparency = 1,
+        Text = "Script Info",
+        Font = Enum.Font.GothamBold,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left
+    })
+    Theme:Register(infoTitle, "TextColor3", "Accent")
+    local infoText = mk("TextLabel", {
+        Parent = infoBox,
+        Position = UDim2.new(0, 12, 0, 24),
+        Size = UDim2.new(1, -24, 1, -26),
+        BackgroundTransparency = 1,
+        Text = opts.Info or opts.Desc or "No script info provided.",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true
+    })
+    Theme:Register(infoText, "TextColor3", "SubText")
+
+    own(UserInputService.InputBegan:Connect(function(input)
+        if closed then return end
+        if input.KeyCode == Enum.KeyCode.Escape then
+            shut()
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        local abs = card.AbsolutePosition
+        local sz = card.AbsoluteSize
+        local px, py = input.Position.X, input.Position.Y
+        if px < abs.X or px > abs.X + sz.X or py < abs.Y or py > abs.Y + sz.Y then
+            shut()
+        end
+    end))
+
+    tween(overlay, {BackgroundTransparency = 0.5}, 0.25)
+    tween(card, {GroupTransparency = 0}, 0.3, Enum.EasingStyle.Quint)
+    tween(stroke, {Transparency = 0.5}, 0.3, Enum.EasingStyle.Quint)
+    return card
 end
 
 function Library:Confirm(title, content, onConfirm)
@@ -4062,7 +4486,7 @@ function Library:CreateWindow(options)
                 return h
             end
 
-            function secMethods:CreateButton(a, callback, variant, iconName, iconColor)
+            function secMethods:CreateButton(a, callback, variant, iconName, iconColor, desc)
                 if type(a) == "table" then
                     local o = a
                     a = o.Name or o.Title
@@ -4070,8 +4494,9 @@ function Library:CreateWindow(options)
                     variant = o.Variant
                     iconName = o.Icon
                     iconColor = o.IconColor
+                    desc = o.Desc or o.Description
                 end
-                table.insert(secDef.Components, {Type = "Button", Name = a, Callback = callback, Variant = variant or "Default", Icon = iconName, IconColor = iconColor})
+                table.insert(secDef.Components, {Type = "Button", Name = a, Desc = desc, Callback = callback, Variant = variant or "Default", Icon = iconName, IconColor = iconColor})
                 return {Type = "Button", Name = a}
             end
 
