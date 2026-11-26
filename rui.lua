@@ -2933,8 +2933,13 @@ function Library:CreateWindow(options)
     -- these live up here because the settings tab below wires em up, and a
     -- callback that only runs later still has to see the key exist
 
+    local keyHintChip = nil
+
     function windowObj:SetKeybind(keyCode)
         windowObj.Keybind = keyCode or windowObj.Keybind
+        if keyHintChip then
+            keyHintChip.Text = windowObj.Keybind and windowObj.Keybind.Name or "None"
+        end
     end
 
     function windowObj:Lock()
@@ -3026,6 +3031,44 @@ function Library:CreateWindow(options)
     track(tabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
         tabList.CanvasSize = UDim2.new(0, 0, 0, tabLayout.AbsoluteContentSize.Y + 15)
     end))
+
+    -- PC-only key hint pinned to the bottom of the sidebar. touch users get
+    -- the floating open button instead, so the list keeps its full height.
+    if not isMobile then
+        tabList.Size = UDim2.new(1, 0, 1, -46)
+        local keyHint = mk("Frame", {
+            Parent = tabContainer,
+            Size = UDim2.new(1, -20, 0, 30),
+            Position = UDim2.new(0, 10, 1, -36),
+            BackgroundColor3 = Theme.Themes.Default.Section,
+            BorderSizePixel = 0
+        })
+        Theme:Register(keyHint, "BackgroundColor3", "Section")
+        mk("UICorner", {Parent = keyHint, CornerRadius = UDim.new(0, 7)})
+        keyHintChip = mk("TextLabel", {
+            Parent = keyHint,
+            Size = UDim2.new(0, 84, 1, 0),
+            Position = UDim2.new(0, 6, 0, 0),
+            BackgroundTransparency = 1,
+            Text = windowObj.Keybind and windowObj.Keybind.Name or "None",
+            Font = Enum.Font.GothamBold,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextTruncate = Enum.TextTruncate.AtEnd
+        })
+        Theme:Register(keyHintChip, "TextColor3", "Text")
+        local keyHintTail = mk("TextLabel", {
+            Parent = keyHint,
+            Size = UDim2.new(1, -96, 1, 0),
+            Position = UDim2.new(0, 92, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "to toggle",
+            Font = Enum.Font.GothamMedium,
+            TextSize = 10,
+            TextXAlignment = Enum.TextXAlignment.Left
+        })
+        Theme:Register(keyHintTail, "TextColor3", "SubText")
+    end
 
     contentContainer = mk("Frame", {
         Parent = canvasGroup,
