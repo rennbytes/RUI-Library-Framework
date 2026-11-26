@@ -236,5 +236,6 @@ RUI:Unload()
 
 ## License
 
-MIT. Add a `LICENSE` file with your copyright line.
+MIT.
 ```
+MIT — see LICENSE.
