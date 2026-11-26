@@ -1,4 +1,3 @@
-```markdown
 # RUI-Library-Framework
 
 Pure Luau UI library for Roblox executors. Single file, no dependencies, no build step. Built for scripts that need tabs, sections, elements, themes, configs, notifications, dialogs and a key gate without shipping a framework folder.
